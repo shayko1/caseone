@@ -397,7 +397,8 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
             designReady = true;
           },
           undefined,
-          () => {
+          (err) => {
+            console.error("Failed to load design texture:", err);
             designReady = false;
           }
         );

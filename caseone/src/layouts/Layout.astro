@@ -26,6 +26,7 @@ const siteOrigin = (() => {
 })();
 const canonical = new URL(Astro.url.pathname, siteOrigin).href;
 const ogImage = new URL(image, siteOrigin).href;
+const finalIntroDesignUrl = introDesignUrl ? new URL(introDesignUrl, siteOrigin).href : undefined;
 ---
 
 <!doctype html>
@@ -57,7 +58,7 @@ const ogImage = new URL(image, siteOrigin).href;
 		/>
 	</head>
 	<body>
-		{showIntro && <GenesisIntro designUrl={introDesignUrl} client:only="react" />}
+		{showIntro && <GenesisIntro designUrl={finalIntroDesignUrl} client:only="react" />}
 		<div class="announcement-bar" data-announcement>
 			<p class="announcement-text" data-announcement-text>Free shipping on orders over $75</p>
 		</div>
