@@ -1,0 +1,34 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Studio from "../components/Studio";
+import { getStyles, getDesigns } from "../lib/wix";
+
+// getStyles()/getDesigns() already guard their own queries and resolve to []
+// on failure — this outer try/catch is a second safety net so a totally
+// unexpected throw (not just a query error) still can't crash SSR.
+let styles: Awaited<ReturnType<typeof getStyles>> = [];
+let designs: Awaited<ReturnType<typeof getDesigns>> = [];
+try {
+  [styles, designs] = await Promise.all([getStyles(), getDesigns()]);
+} catch (err) {
+  console.error("[studio.astro] SSR data fetch failed:", err);
+}
+
+// Deep-link: /studio?style=<slug>&prompt=<text> — the gallery's "Remix"
+// action pre-fills the prompt/style once Studio mounts.
+const initialStyleSlug = Astro.url.searchParams.get("style") ?? undefined;
+const initialPrompt = Astro.url.searchParams.get("prompt") ?? undefined;
+---
+
+<Layout
+  title="AI Design Studio — CASEONE"
+  description="Design a one-of-a-kind custom iPhone case: describe it, generate AI concepts, preview in 3D, personalize, and add it to your cart."
+>
+  <Studio
+    styles={styles}
+    designs={designs}
+    initialStyleSlug={initialStyleSlug}
+    initialPrompt={initialPrompt}
+    client:only="react"
+  />
+</Layout>

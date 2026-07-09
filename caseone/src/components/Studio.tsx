@@ -8,11 +8,10 @@ import {
   MODELS,
   UI_MODEL_LABELS,
   FINISHES,
-  OPTION_MODEL,
-  OPTION_FINISH,
   PRODUCT_ID,
   STORES_APP_ID,
   DESIGN_NOTES_MODIFIER_KEY,
+  VARIANT_ID_BY_MODEL_FINISH,
 } from "../lib/constants";
 
 const PROMPT_MAX_LENGTH = 280;
@@ -281,16 +280,7 @@ export default function Studio({
   const handleAddToCart = async () => {
     if (!model || !finish || !selectedDesign) return;
     setAddState("adding");
-    const catalogReferenceBase = {
-      appId: STORES_APP_ID,
-      catalogItemId: PRODUCT_ID,
-      options: {
-        options: {
-          [OPTION_MODEL]: model,
-          [OPTION_FINISH]: finish,
-        },
-      },
-    };
+
     // Combines into the ONE recognized free-text modifier
     // (DESIGN_NOTES_MODIFIER_KEY — scripts/seed-store.sh defines it,
     // freeTextSettings.maxCharCount 200 on the live product). Clamped
@@ -305,38 +295,70 @@ export default function Studio({
       .join(" | ")
       .slice(0, DESIGN_NOTES_MAX_LENGTH);
 
+    // "iPhone Model" and "Finish" are Product Options (they create variants),
+    // not modifiers — per Catalog V3's eCommerce-integration doc, those are
+    // selected via catalogReference.options.variantId, NOT the name-matched
+    // options.options map (that shape is for TEXT_CHOICES *modifier*
+    // selections only, and this product defines none). VARIANT_ID_BY_MODEL_FINISH
+    // is a live-resolved lookup (constants.ts) — every value in MODELS x
+    // FINISHES has an entry, so a miss here should never happen in practice.
+    const variantId = VARIANT_ID_BY_MODEL_FINISH[`${model}|${finish}`];
+
     try {
-      try {
-        await currentCart.addToCurrentCart({
-          lineItems: [
-            {
-              catalogReference: {
-                ...catalogReferenceBase,
-                options: {
-                  ...catalogReferenceBase.options,
-                  customTextFields: {
-                    [DESIGN_NOTES_MODIFIER_KEY]: designNotes,
-                  },
-                },
-              },
-              quantity: 1,
-            },
-          ],
-        });
-        setMetadataAttached(true);
-      } catch (withFieldsErr) {
-        // Falls back to a bare add rather than blocking the purchase on an
-        // ancillary metadata field — but the visitor still needs to know
-        // their design/personalization wasn't recorded (see the confirmation
-        // panel's notice, gated on metadataAttached === false).
-        console.warn(
-          "[studio] add-to-cart with the Design Notes modifier failed, retrying without it:",
-          withFieldsErr,
+      if (!variantId) {
+        // Guard for a lookup miss that "shouldn't happen": there's no way to
+        // select the right variant without it, so fall back to the bare add
+        // rather than blocking the purchase entirely — the visitor is told
+        // via the same "Heads up" notice used for the metadata-only fallback
+        // below, since neither the exact variant nor the design metadata can
+        // be guaranteed on this line item.
+        console.error(
+          `[studio] no variantId found for model="${model}" finish="${finish}" — falling back to a bare add`,
         );
         await currentCart.addToCurrentCart({
-          lineItems: [{ catalogReference: catalogReferenceBase, quantity: 1 }],
+          lineItems: [
+            { catalogReference: { appId: STORES_APP_ID, catalogItemId: PRODUCT_ID }, quantity: 1 },
+          ],
         });
         setMetadataAttached(false);
+      } else {
+        const catalogReferenceBase = {
+          appId: STORES_APP_ID,
+          catalogItemId: PRODUCT_ID,
+          options: { variantId },
+        };
+        try {
+          await currentCart.addToCurrentCart({
+            lineItems: [
+              {
+                catalogReference: {
+                  ...catalogReferenceBase,
+                  options: {
+                    ...catalogReferenceBase.options,
+                    customTextFields: {
+                      [DESIGN_NOTES_MODIFIER_KEY]: designNotes,
+                    },
+                  },
+                },
+                quantity: 1,
+              },
+            ],
+          });
+          setMetadataAttached(true);
+        } catch (withFieldsErr) {
+          // Falls back to a variantId-only add rather than blocking the
+          // purchase on an ancillary metadata field — but the visitor still
+          // needs to know their design/personalization wasn't recorded (see
+          // the confirmation panel's notice, gated on metadataAttached === false).
+          console.warn(
+            "[studio] add-to-cart with the Design Notes modifier failed, retrying without it:",
+            withFieldsErr,
+          );
+          await currentCart.addToCurrentCart({
+            lineItems: [{ catalogReference: catalogReferenceBase, quantity: 1 }],
+          });
+          setMetadataAttached(false);
+        }
       }
       window.dispatchEvent(new CustomEvent("caseone:cart-updated"));
       setAddState("added");

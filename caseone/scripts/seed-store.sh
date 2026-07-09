@@ -12,7 +12,15 @@
 #   2. Create — POST one product to the bulk create-with-inventory endpoint:
 #      options "iPhone Model" (15 / 15 Pro / 16 / 16 Pro / 16 Pro Max) x
 #      "Finish" (Matte / Glossy / Leather) = 15 variants, base $59.00, all
-#      Leather variants $79.00. Text-only at create time (media added next).
+#      Leather variants $79.00. Also defines one FREE_TEXT modifier ("Design
+#      Notes") so the Studio checkout flow (Task 11) can carry the generated
+#      design + personalization on the cart line item. Catalog V3 generates
+#      modifiers[].freeTextSettings.key from the title verbatim — as of this
+#      writing that resolves to the literal string "Design notes" (confirmed
+#      live against productId e70e8dde-caef-4001-a980-f44ebe1ee6ac via GET
+#      product); re-verify after any re-run before wiring
+#      catalogReference.options.customTextFields to it. Text-only at create
+#      time (media added next).
 #   3. Images — GET the product for revision+options+variantsInfo, echo them
 #      back in a PATCH that sets media.itemsInfo.items to 3 image URLs
 #      (futuristic-01, marble-01, y2k-02). Confirm via media.main, since
@@ -121,6 +129,14 @@ jq -n \
             choicesSettings: { choices: [ $models[] | { choiceType: "CHOICE_TEXT", name: . } ] } },
           { name: $optFinish, optionRenderType: "TEXT_CHOICES",
             choicesSettings: { choices: [ $finishes[] | { choiceType: "CHOICE_TEXT", name: . } ] } }
+        ],
+        modifiers: [
+          {
+            name: "Design Notes",
+            modifierRenderType: "FREE_TEXT",
+            mandatory: false,
+            freeTextSettings: { title: "Design notes", maxCharCount: 200 }
+          }
         ],
         variantsInfo: {
           variants: [
@@ -280,7 +296,38 @@ if [[ -z "$main_image_url" ]]; then
   exit 1
 fi
 
+echo "== STEP 5: resolve variantId per (model, finish) pair =="
+
+# Product Options (unlike modifiers) are selected on add-to-cart via
+# catalogReference.options.variantId, not name-matching (see
+# about-product-options-and-variants + the eCommerce-integration doc) — so
+# the cart-wiring code needs a live-resolved variantId per (model, finish).
+# Same choiceId -> name resolution approach as the Leather-price assertion
+# above: build a choiceId -> {optionName, choiceName} lookup from
+# product.options, then walk each variant's choices through it.
+variant_map=$(jq -r --arg optModel "$OPTION_MODEL_NAME" --arg optFinish "$OPTION_FINISH_NAME" '
+  ( [ .product.options[] as $opt | $opt.choicesSettings.choices[] | { (.choiceId): { optionName: $opt.name, choiceName: .name } } ] | add ) as $lookup
+  | [ .product.variantsInfo.variants[] |
+      ( .choices | map( $lookup[.optionChoiceIds.choiceId] ) ) as $resolved |
+      {
+        key: ( ($resolved[] | select(.optionName==$optModel) | .choiceName) + "|" + ($resolved[] | select(.optionName==$optFinish) | .choiceName) ),
+        value: .id
+      }
+    ] | from_entries
+' "$TMP_DIR/final.json")
+
+variant_map_count=$(echo "$variant_map" | jq 'length')
+echo "Resolved $variant_map_count variantId entries (expect 15)."
+if [[ "$variant_map_count" != "15" ]]; then
+  echo "Expected 15 variantId map entries, got $variant_map_count" >&2
+  exit 1
+fi
+
 jq -n --arg productId "$PRODUCT_ID" --arg model "$OPTION_MODEL_NAME" --arg finish "$OPTION_FINISH_NAME" \
-  '{ productId: $productId, optionNames: { model: $model, finish: $finish } }' > "$PRODUCT_JSON"
+  --argjson variantIdByModelFinish "$variant_map" \
+  '{ productId: $productId, optionNames: { model: $model, finish: $finish }, variantIdByModelFinish: $variantIdByModelFinish }' > "$PRODUCT_JSON"
 echo "Wrote $PRODUCT_JSON"
 cat "$PRODUCT_JSON"
+echo ""
+echo "NOTE: if these variantIds differ from src/lib/constants.ts's VARIANT_ID_BY_MODEL_FINISH" >&2
+echo "(e.g. after recreating the product), update that constant to match this file." >&2
