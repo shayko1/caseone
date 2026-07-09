@@ -155,7 +155,8 @@ function buildActivityLines(items: GalleryItem[], count: number): string[] {
     if (!firstName) continue;
     const city = ACTIVITY_CITIES[i % ACTIVITY_CITIES.length];
     const styleTitle = resolveStyleTitle(item.styleSlug);
-    lines.push(`${firstName} in ${city} just designed a ${styleTitle} case`);
+    const article = /^[aeiou]/i.test(styleTitle) ? "an" : "a";
+    lines.push(`${firstName} in ${city} just designed ${article} ${styleTitle} case`);
   }
   return lines;
 }

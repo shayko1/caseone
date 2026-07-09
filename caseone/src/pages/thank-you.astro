@@ -1,0 +1,59 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout
+	title="Thank you — CASEONE"
+	description="Your one-of-one case is on its way. Made to order, just for you."
+>
+	<section class="thankyou">
+		<div class="thankyou-inner glass reveal">
+			<p class="eyebrow">Order confirmed</p>
+			<h1 class="display thankyou-title">
+				Your case<br />is being made
+			</h1>
+			<p class="thankyou-sub">
+				One of one, made to order — it ships in 5–7 days. We've sent your
+				confirmation and design details to your email.
+			</p>
+			<div class="thankyou-actions">
+				<a class="btn-primary" href="/studio">Design another</a>
+				<a class="btn-ghost" href="/gallery">Explore the gallery</a>
+			</div>
+		</div>
+	</section>
+</Layout>
+
+<style>
+	.thankyou {
+		min-height: 70vh;
+		display: grid;
+		place-items: center;
+		padding: clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.thankyou-inner {
+		max-width: 40rem;
+		padding: clamp(2rem, 5vw, 3.5rem);
+		text-align: center;
+	}
+
+	.thankyou-title {
+		font-size: clamp(2.2rem, 6vw, 4rem);
+		margin: 0.75rem 0 1.25rem;
+	}
+
+	.thankyou-sub {
+		max-width: 32rem;
+		margin: 0 auto 2rem;
+		color: rgba(23, 21, 31, 0.72);
+		line-height: 1.65;
+	}
+
+	.thankyou-actions {
+		display: flex;
+		gap: 1rem;
+		justify-content: center;
+		flex-wrap: wrap;
+	}
+</style>
