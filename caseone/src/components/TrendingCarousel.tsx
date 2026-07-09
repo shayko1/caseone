@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import type { Design } from "../lib/wix";
+import { optimizeImage } from "../lib/image";
 
 interface TrendingCarouselProps {
   designs: Design[];
@@ -39,7 +40,11 @@ export default function TrendingCarousel({ designs, styleTitleBySlug }: Trending
         {designs.map((design) => (
           <li className="trending-tile" key={design.id}>
             <div className="trending-tile-frame">
-              <img src={design.image} alt={design.title || "Case design"} loading="lazy" />
+              <img
+                src={optimizeImage(design.image)}
+                alt={design.title || "Case design"}
+                loading="lazy"
+              />
             </div>
             <div className="trending-tile-body">
               <span className="trending-chip">

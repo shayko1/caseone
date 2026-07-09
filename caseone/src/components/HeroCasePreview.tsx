@@ -36,9 +36,10 @@ export default function HeroCasePreview({ designUrls, className }: HeroCasePrevi
     <CasePreview
       designUrl={activeUrl}
       deviceColor="#1c1c1e"
-      lighting="studio"
+      lighting="neon"
       autoRotate
       interactive={false}
+      separateCaseOnHover
       className={className}
     />
   );

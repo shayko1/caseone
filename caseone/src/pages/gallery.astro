@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import { getGallery, getStyles, type GalleryItem, type Style } from '../lib/wix';
+import { optimizeImage } from '../lib/image';
 
 // The 12 style slugs seeded by Task 4, in the order they should appear as
 // filter chips when the "styles" CMS query is unavailable.
@@ -129,7 +130,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 						<article class="gallery-card glass reveal" data-gallery-card data-style-slug={item.styleSlug}>
 							<div class="gallery-card-media">
 								<img
-									src={item.image}
+									src={optimizeImage(item.image)}
 									alt={`${item.title} phone case design by ${item.creatorName}`}
 									loading="lazy"
 									style="aspect-ratio: 4 / 5; object-fit: cover;"
@@ -234,6 +235,41 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		padding: 0 clamp(1rem, 4vw, 2.5rem) 2.5rem;
 	}
 
+	@media (max-width: 720px) {
+		.gallery-hero {
+			padding-top: clamp(1.75rem, 6vw, 3rem);
+			padding-bottom: 1.25rem;
+			gap: 0.75rem;
+		}
+
+		.gallery-filters {
+			flex-wrap: nowrap;
+			justify-content: flex-start;
+			overflow-x: auto;
+			scroll-snap-type: x proximity;
+			-webkit-overflow-scrolling: touch;
+			scrollbar-width: none;
+			gap: 0.5rem;
+			padding-bottom: 1.25rem;
+			mask-image: linear-gradient(to right, #000 88%, transparent);
+			-webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
+		}
+
+		.gallery-filters::-webkit-scrollbar {
+			display: none;
+		}
+
+		.filter-chip {
+			flex: 0 0 auto;
+			scroll-snap-align: start;
+		}
+
+		.gallery-grid {
+			grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+			gap: 1rem;
+		}
+	}
+
 	.filter-chip {
 		display: inline-flex;
 		align-items: center;
@@ -241,7 +277,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		padding: 0.5rem 1.1rem;
 		font-size: 0.85rem;
 		font-weight: 500;
-		border: 1px solid rgba(23, 21, 31, 0.15);
+		border: 1px solid rgba(243, 239, 255, 0.15);
 		background: transparent;
 		transition: border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), background 0.15s cubic-bezier(0.22, 1, 0.36, 1), color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 		cursor: pointer;
@@ -346,7 +382,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 
 	.gallery-card:hover {
 		transform: translateY(-4px);
-		box-shadow: 0 16px 28px -10px rgba(23, 21, 31, 0.25);
+		box-shadow: 0 16px 28px -10px rgba(0, 0, 0, 0.45);
 	}
 
 	.gallery-card-media img {

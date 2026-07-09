@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type * as ThreeNS from "three";
+import { optimizeImage } from "../lib/image";
 
 export type LightingPreset = "studio" | "warm" | "neon";
 
@@ -9,6 +10,8 @@ export interface CasePreviewProps {
   lighting: LightingPreset;
   autoRotate: boolean;
   interactive: boolean;
+  /** Hero-only: lift the case off the phone body on hover. */
+  separateCaseOnHover?: boolean;
   className?: string;
 }
 
@@ -38,7 +41,7 @@ function StaticFallback({
       }}
     >
       <img
-        src={designUrl}
+        src={optimizeImage(designUrl)}
         alt="Phone case design preview"
         style={{
           maxWidth: "70%",
@@ -80,6 +83,7 @@ export default function CasePreview({
   lighting,
   autoRotate,
   interactive,
+  separateCaseOnHover = false,
   className,
 }: CasePreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -131,12 +135,19 @@ export default function CasePreview({
       const renderer = new THREE.WebGLRenderer({
         antialias: true,
         alpha: true,
+        premultipliedAlpha: true,
       });
+      renderer.setClearColor(0x000000, 0);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
       container.appendChild(renderer.domElement);
+      renderer.domElement.style.background = "transparent";
+      renderer.domElement.style.display = "block";
 
       const scene = new THREE.Scene();
+      scene.background = null;
 
       const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
       let cameraDistance = DEFAULT_DISTANCE;
@@ -233,22 +244,22 @@ export default function CasePreview({
         return geometry;
       }
 
-      // Body cap (material index 0, front + back faces) is device-color
-      // metal — mostly hidden under the case and screen, but it's what
+      // Body cap (material index 0, front + back faces) is frosted glass /
+      // ceramic — mostly hidden under the case and screen, but it's what
       // peeks through the case's camera cutout. The side rail (index 1)
-      // is a distinct brushed-metal band around the edges.
+      // is a satin titanium band around the flat edges.
       const bodyCapMaterial = new THREE.MeshStandardMaterial({
         color: new THREE.Color(deviceColor || "#8e8e93"),
-        roughness: 0.42,
-        metalness: 0.55,
+        roughness: 0.55,
+        metalness: 0.35,
       });
       const bodyRailMaterial = new THREE.MeshStandardMaterial({
         color: new THREE.Color(deviceColor || "#8e8e93"),
-        roughness: 0.28,
-        metalness: 0.9,
+        roughness: 0.18,
+        metalness: 0.95,
       });
       const bodyShape = roundedRectShape(PHONE_WIDTH, PHONE_HEIGHT, BODY_RADIUS);
-      const bodyGeometry = extrudeSlab(bodyShape, PHONE_DEPTH);
+      const bodyGeometry = extrudeSlab(bodyShape, PHONE_DEPTH, 0.18);
       const bodyMesh = new THREE.Mesh(bodyGeometry, [
         bodyCapMaterial,
         bodyRailMaterial,
@@ -256,45 +267,45 @@ export default function CasePreview({
       phoneGroup.add(bodyMesh);
 
       // Slim rounded side buttons: power on the right edge, two volume
-      // buttons + an action button on the left edge.
+      // buttons + an action button on the left edge — flush titanium look.
       const buttonMaterial = new THREE.MeshStandardMaterial({
         color: new THREE.Color(deviceColor || "#8e8e93"),
-        roughness: 0.22,
-        metalness: 0.92,
+        roughness: 0.16,
+        metalness: 0.96,
       });
       const addSideButton = (yPos: number, side: 1 | -1, length: number) => {
-        const protrusion = 0.02;
-        const thickness = PHONE_DEPTH * 0.55;
+        const protrusion = 0.016;
+        const thickness = PHONE_DEPTH * 0.62;
         const geometry = new RoundedBoxGeometry(
           protrusion,
           length,
           thickness,
-          2,
-          Math.min(protrusion, thickness) * 0.45
+          3,
+          Math.min(protrusion, thickness) * 0.4
         );
         const mesh = new THREE.Mesh(geometry, buttonMaterial);
-        mesh.position.set(side * (PHONE_WIDTH / 2 + protrusion * 0.25), yPos, 0);
+        mesh.position.set(side * (PHONE_WIDTH / 2 + protrusion * 0.22), yPos, 0);
         phoneGroup.add(mesh);
       };
-      addSideButton(0.58, 1, 0.17); // power — right edge
-      addSideButton(0.72, -1, 0.09); // action button — left edge
-      addSideButton(0.5, -1, 0.15); // volume up — left edge
-      addSideButton(0.32, -1, 0.15); // volume down — left edge
+      addSideButton(0.55, 1, 0.2); // power — right edge
+      addSideButton(0.74, -1, 0.07); // action button — left edge
+      addSideButton(0.52, -1, 0.14); // volume up — left edge
+      addSideButton(0.34, -1, 0.14); // volume down — left edge
 
       // ---- front: glossy screen inset + bezel + Dynamic Island ----
       // Sits on the -z face, opposite the case/camera side, so it's
       // revealed when the phone is rotated around.
       const FRONT_Z = -PHONE_DEPTH / 2 - 0.001;
       const bezelMaterial = new THREE.MeshStandardMaterial({
-        color: 0x0b0b0d,
-        roughness: 0.35,
-        metalness: 0.1,
+        color: 0x050506,
+        roughness: 0.28,
+        metalness: 0.15,
         side: THREE.DoubleSide,
       });
       const bezelShape = roundedRectShape(
-        PHONE_WIDTH * 0.965,
-        PHONE_HEIGHT * 0.978,
-        BODY_RADIUS * 0.88
+        PHONE_WIDTH * 0.972,
+        PHONE_HEIGHT * 0.982,
+        BODY_RADIUS * 0.9
       );
       const bezelMesh = new THREE.Mesh(
         new THREE.ShapeGeometry(bezelShape),
@@ -303,16 +314,19 @@ export default function CasePreview({
       bezelMesh.position.z = FRONT_Z;
       phoneGroup.add(bezelMesh);
 
-      const screenMaterial = new THREE.MeshStandardMaterial({
-        color: 0x03030a,
-        roughness: 0.05,
-        metalness: 0.2,
+      const screenMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x010105,
+        roughness: 0.02,
+        metalness: 0.05,
+        clearcoat: 1,
+        clearcoatRoughness: 0.04,
+        reflectivity: 0.9,
         side: THREE.DoubleSide,
       });
       const screenShape = roundedRectShape(
-        PHONE_WIDTH * 0.9,
-        PHONE_HEIGHT * 0.945,
-        BODY_RADIUS * 0.72
+        PHONE_WIDTH * 0.915,
+        PHONE_HEIGHT * 0.955,
+        BODY_RADIUS * 0.78
       );
       const screenMesh = new THREE.Mesh(
         new THREE.ShapeGeometry(screenShape),
@@ -323,48 +337,49 @@ export default function CasePreview({
 
       const islandMaterial = new THREE.MeshStandardMaterial({
         color: 0x000000,
-        roughness: 0.4,
-        metalness: 0,
+        roughness: 0.35,
+        metalness: 0.05,
         side: THREE.DoubleSide,
       });
       const islandShape = roundedRectShape(
-        PHONE_WIDTH * 0.24,
-        PHONE_WIDTH * 0.075,
-        PHONE_WIDTH * 0.0375
+        PHONE_WIDTH * 0.26,
+        PHONE_WIDTH * 0.072,
+        PHONE_WIDTH * 0.036
       );
       const islandMesh = new THREE.Mesh(
         new THREE.ShapeGeometry(islandShape),
         islandMaterial
       );
-      islandMesh.position.set(0, PHONE_HEIGHT * 0.42, FRONT_Z - 0.002);
+      islandMesh.position.set(0, PHONE_HEIGHT * 0.425, FRONT_Z - 0.002);
       phoneGroup.add(islandMesh);
 
       // ---- case with textured back plate + camera cutout ----
       // Slightly larger than the body footprint so it visibly wraps the
       // edges, with a rounded hole around the camera plateau so a thin
       // rim of the body's cap material shows through — like a real case.
-      const CASE_THICKNESS = 0.02;
-      const CASE_GAP = 0.001;
-      const CASE_WIDTH = PHONE_WIDTH * 1.015;
-      const CASE_HEIGHT = PHONE_HEIGHT * 1.008;
-      const CASE_RADIUS = BODY_RADIUS * 1.05;
+      const CASE_THICKNESS = 0.022;
+      const CASE_GAP = 0.0015;
+      const CASE_WIDTH = PHONE_WIDTH * 1.028;
+      const CASE_HEIGHT = PHONE_HEIGHT * 1.014;
+      const CASE_RADIUS = BODY_RADIUS * 1.08;
 
-      const PLATEAU_SIZE = PHONE_WIDTH * 0.42;
+      // iPhone Pro-style square camera island (2×2 lens grid).
+      const PLATEAU_SIZE = PHONE_WIDTH * 0.46;
       const PLATEAU_RADIUS = PLATEAU_SIZE * 0.22;
-      const plateauX = -PHONE_WIDTH / 2 + PLATEAU_SIZE / 2 + PHONE_WIDTH * 0.07;
-      const plateauY = PHONE_HEIGHT / 2 - PLATEAU_SIZE / 2 - PHONE_WIDTH * 0.07;
-      const cutoutMargin = PLATEAU_SIZE * 0.05; // uniform rim width around the plateau
+      const plateauX = -PHONE_WIDTH / 2 + PLATEAU_SIZE / 2 + PHONE_WIDTH * 0.055;
+      const plateauY = PHONE_HEIGHT / 2 - PLATEAU_SIZE / 2 - PHONE_WIDTH * 0.055;
+      const cutoutMargin = PLATEAU_SIZE * 0.06;
 
       const textureLoader = new THREE.TextureLoader();
       const designMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        roughness: 0.55,
-        metalness: 0.05,
+        roughness: 0.5,
+        metalness: 0.08,
       });
       const caseEdgeMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1a1a1a,
-        roughness: 0.75,
-        metalness: 0.05,
+        color: 0x141416,
+        roughness: 0.65,
+        metalness: 0.12,
       });
 
       const caseShape = roundedRectShape(CASE_WIDTH, CASE_HEIGHT, CASE_RADIUS);
@@ -377,18 +392,25 @@ export default function CasePreview({
       );
       caseShape.holes.push(caseCutout);
 
-      const CASE_CENTER_Z = PHONE_DEPTH / 2 + CASE_GAP + CASE_THICKNESS / 2;
+      const CASE_REST_Z = PHONE_DEPTH / 2 + CASE_GAP + CASE_THICKNESS / 2;
+      // Far enough that the gap reads clearly even when the phone faces the camera.
+      const CASE_SEPARATE_Z = CASE_REST_Z + 0.42;
       const caseGeometry = extrudeSlab(caseShape, CASE_THICKNESS, 0.3);
       // Only the cap faces (material index 0) carry the design texture;
       // the edge material has no map, so normalizing every vertex's UV
       // uniformly is harmless there and keeps this simple.
       normalizeUVsToBounds(caseGeometry, CASE_WIDTH, CASE_HEIGHT);
+
+      // Own group so hover can lift the case off the phone body without
+      // moving the camera module (which stays on the phone).
+      const caseGroup = new THREE.Group();
+      caseGroup.position.z = CASE_REST_Z;
       const caseMesh = new THREE.Mesh(caseGeometry, [
         designMaterial,
         caseEdgeMaterial,
       ]);
-      caseMesh.position.z = CASE_CENTER_Z;
-      phoneGroup.add(caseMesh);
+      caseGroup.add(caseMesh);
+      phoneGroup.add(caseGroup);
 
       let designTexture: ThreeNS.Texture | null = null;
       // Tracks the most recently requested URL so a slow-resolving load for
@@ -396,7 +418,11 @@ export default function CasePreview({
       let latestRequestedUrl = designUrl;
       const loadDesignTexture = (url: string) => {
         latestRequestedUrl = url;
-        textureLoader.load(url, (tex) => {
+        // The stored design URL is the untouched original upload (often a
+        // 100-150KB lossless PNG at a fraction of this canvas's render
+        // size) — re-encode to WebP at render time so the texture swap
+        // doesn't stall on an oversized download.
+        textureLoader.load(optimizeImage(url), (tex) => {
           if (disposed || url !== latestRequestedUrl) {
             tex.dispose();
             return;
@@ -412,19 +438,18 @@ export default function CasePreview({
       };
       loadDesignTexture(designUrl);
 
-      // ---- camera plateau: raised block poking through the case cutout ----
-      // Own fixed dark finish (not device-color tinted), like the real thing.
-      const PLATEAU_THICKNESS = 0.05; // protrudes well past the case surface
+      // ---- iPhone Pro camera island: square module, 2×2 lenses ----
+      const PLATEAU_THICKNESS = 0.052;
       const plateauShape = roundedRectShape(
         PLATEAU_SIZE,
         PLATEAU_SIZE,
         PLATEAU_RADIUS
       );
-      const plateauGeometry = extrudeSlab(plateauShape, PLATEAU_THICKNESS, 0.18);
+      const plateauGeometry = extrudeSlab(plateauShape, PLATEAU_THICKNESS, 0.12);
       const plateauMaterial = new THREE.MeshStandardMaterial({
-        color: 0x161616,
-        roughness: 0.4,
-        metalness: 0.5,
+        color: 0x1a1a1e,
+        roughness: 0.42,
+        metalness: 0.62,
       });
       const plateauFrontZ = PLATEAU_THICKNESS / 2;
 
@@ -440,98 +465,167 @@ export default function CasePreview({
       cameraModuleGroup.add(plateauMesh);
       phoneGroup.add(cameraModuleGroup);
 
-      // Diagonal triple-lens layout (16 Pro style): each lens is a
-      // protruding cylinder with a lighter metallic rim, a dark glossy
-      // glass center, and a tiny raised inner dome for the highlight.
-      const lensRimMaterial = new THREE.MeshStandardMaterial({
-        color: 0xcfcfd4,
-        roughness: 0.25,
-        metalness: 0.85,
+      // Soft inset ring under each lens (Pro glass look).
+      const lensWellMaterial = new THREE.MeshStandardMaterial({
+        color: 0x0a0a0c,
+        roughness: 0.55,
+        metalness: 0.25,
       });
-      const lensGlassMaterial = new THREE.MeshStandardMaterial({
-        color: 0x05050a,
-        roughness: 0.08,
+      const lensRimMaterial = new THREE.MeshStandardMaterial({
+        color: 0xc4c4ca,
+        roughness: 0.18,
+        metalness: 0.95,
+      });
+      const lensGlassMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x05050c,
+        roughness: 0.03,
         metalness: 0.15,
+        clearcoat: 1,
+        clearcoatRoughness: 0.04,
+        reflectivity: 0.9,
       });
       const lensHighlightMaterial = new THREE.MeshStandardMaterial({
-        color: 0x2a2a35,
-        roughness: 0.05,
-        metalness: 0.3,
-        emissive: 0x1a1a22,
-        emissiveIntensity: 0.15,
+        color: 0x2e2e3a,
+        roughness: 0.04,
+        metalness: 0.35,
+        emissive: 0x1a1a28,
+        emissiveIntensity: 0.22,
       });
 
       const addLens = (localX: number, localY: number, radius: number) => {
+        const well = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius * 1.38, radius * 1.38, 0.006, 36),
+          lensWellMaterial
+        );
+        well.rotation.x = Math.PI / 2;
+        well.position.set(localX, localY, plateauFrontZ + 0.004);
+        cameraModuleGroup.add(well);
+
         const rimThickness = 0.012;
         const rim = new THREE.Mesh(
-          new THREE.CylinderGeometry(radius * 1.28, radius * 1.28, rimThickness, 28),
+          new THREE.CylinderGeometry(
+            radius * 1.18,
+            radius * 1.18,
+            rimThickness,
+            36
+          ),
           lensRimMaterial
         );
         rim.rotation.x = Math.PI / 2;
-        rim.position.set(localX, localY, plateauFrontZ + rimThickness / 2);
+        rim.position.set(localX, localY, plateauFrontZ + 0.008 + rimThickness / 2);
         cameraModuleGroup.add(rim);
 
-        const glassThickness = 0.01;
+        const glassThickness = 0.009;
         const glass = new THREE.Mesh(
-          new THREE.CylinderGeometry(radius, radius, glassThickness, 28),
+          new THREE.CylinderGeometry(radius, radius, glassThickness, 36),
           lensGlassMaterial
         );
         glass.rotation.x = Math.PI / 2;
         glass.position.set(
           localX,
           localY,
-          plateauFrontZ + rimThickness + glassThickness / 2 - 0.002
+          plateauFrontZ + 0.008 + rimThickness + glassThickness / 2 - 0.002
         );
         cameraModuleGroup.add(glass);
 
-        const domeRadius = radius * 0.45;
+        const domeRadius = radius * 0.4;
         const dome = new THREE.Mesh(
-          new THREE.SphereGeometry(domeRadius, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+          new THREE.SphereGeometry(
+            domeRadius,
+            16,
+            12,
+            0,
+            Math.PI * 2,
+            0,
+            Math.PI / 2
+          ),
           lensHighlightMaterial
         );
         dome.rotation.x = Math.PI / 2;
         dome.position.set(
           localX,
           localY,
-          plateauFrontZ + rimThickness + glassThickness - domeRadius * 0.5
+          plateauFrontZ + 0.008 + rimThickness + glassThickness - domeRadius * 0.45
         );
         cameraModuleGroup.add(dome);
       };
 
-      const lensRadius = PLATEAU_SIZE * 0.16;
-      const diag = PLATEAU_SIZE * 0.22;
-      addLens(-diag, diag, lensRadius); // top-left
-      addLens(0, 0, lensRadius); // center
-      addLens(diag, -diag, lensRadius); // bottom-right
+      // Classic iPhone Pro triangle: three large lenses + flash/mic on the right.
+      const lensRadius = PLATEAU_SIZE * 0.132;
+      const lensOffset = PLATEAU_SIZE * 0.175;
+      addLens(-lensOffset, lensOffset, lensRadius); // top-left (main)
+      addLens(lensOffset, lensOffset, lensRadius * 0.98); // top-right (ultra / tele)
+      addLens(-lensOffset, -lensOffset, lensRadius * 0.98); // bottom-left (tele / ultra)
 
-      // Flash (soft emissive cream) and mic dot in the remaining corners.
+      // Flash + mic sit in the open bottom-right quadrant of the island.
       const flashMaterial = new THREE.MeshStandardMaterial({
-        color: 0xfff3d6,
-        roughness: 0.4,
-        metalness: 0,
-        emissive: 0xfff0c8,
-        emissiveIntensity: 0.6,
+        color: 0xfff4dc,
+        roughness: 0.32,
+        metalness: 0.05,
+        emissive: 0xffefc4,
+        emissiveIntensity: 0.8,
       });
       const flash = new THREE.Mesh(
-        new THREE.CylinderGeometry(PLATEAU_SIZE * 0.05, PLATEAU_SIZE * 0.05, 0.008, 20),
+        new THREE.CylinderGeometry(
+          PLATEAU_SIZE * 0.055,
+          PLATEAU_SIZE * 0.055,
+          0.008,
+          24
+        ),
         flashMaterial
       );
       flash.rotation.x = Math.PI / 2;
-      flash.position.set(diag, diag, plateauFrontZ + 0.004);
+      flash.position.set(lensOffset * 0.85, -lensOffset * 0.35, plateauFrontZ + 0.006);
       cameraModuleGroup.add(flash);
 
       const micMaterial = new THREE.MeshStandardMaterial({
-        color: 0x050505,
-        roughness: 0.6,
-        metalness: 0.1,
+        color: 0x080808,
+        roughness: 0.55,
+        metalness: 0.15,
       });
       const mic = new THREE.Mesh(
-        new THREE.CylinderGeometry(PLATEAU_SIZE * 0.035, PLATEAU_SIZE * 0.035, 0.006, 16),
+        new THREE.CylinderGeometry(
+          PLATEAU_SIZE * 0.024,
+          PLATEAU_SIZE * 0.024,
+          0.006,
+          16
+        ),
         micMaterial
       );
       mic.rotation.x = Math.PI / 2;
-      mic.position.set(-diag, -diag, plateauFrontZ + 0.003);
+      mic.position.set(lensOffset * 0.35, -lensOffset * 0.95, plateauFrontZ + 0.005);
       cameraModuleGroup.add(mic);
+
+      const sensor = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          PLATEAU_SIZE * 0.016,
+          PLATEAU_SIZE * 0.016,
+          0.005,
+          12
+        ),
+        micMaterial
+      );
+      sensor.rotation.x = Math.PI / 2;
+      sensor.position.set(lensOffset * 1.15, -lensOffset * 0.95, plateauFrontZ + 0.004);
+      cameraModuleGroup.add(sensor);
+
+      // Hover: lift the case off the phone (hero only).
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      let caseHoverTarget = 0; // 0 = seated, 1 = separated
+      let caseHoverAmount = 0;
+      const onCaseHoverEnter = () => {
+        if (!separateCaseOnHover || prefersReducedMotion) return;
+        caseHoverTarget = 1;
+      };
+      const onCaseHoverLeave = () => {
+        caseHoverTarget = 0;
+      };
+      if (separateCaseOnHover) {
+        container.addEventListener("pointerenter", onCaseHoverEnter);
+        container.addEventListener("pointerleave", onCaseHoverLeave);
+      }
 
       // Materials that should track the deviceColor prop.
       const deviceColorMaterials = [bodyCapMaterial, bodyRailMaterial, buttonMaterial];
@@ -557,12 +651,16 @@ export default function CasePreview({
           }
           case "studio":
           default: {
-            const key = new THREE.DirectionalLight(0xffffff, 2.0);
-            key.position.set(2, 3, 4);
-            const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
-            fillLight.position.set(-3, -1, 2);
-            const ambient = new THREE.AmbientLight(0xffffff, 0.35);
-            return [key, fillLight, ambient];
+            // Soft product-shot lighting: bright key, cool fill, edge rim
+            // so the titanium rail and lens rims catch highlights.
+            const key = new THREE.DirectionalLight(0xfff8f0, 2.35);
+            key.position.set(2.4, 2.8, 3.6);
+            const fillLight = new THREE.DirectionalLight(0xd8e4ff, 0.7);
+            fillLight.position.set(-2.8, -0.6, 2.2);
+            const rim = new THREE.DirectionalLight(0xffffff, 0.55);
+            rim.position.set(-1.5, 2.5, -2.5);
+            const ambient = new THREE.AmbientLight(0xffffff, 0.28);
+            return [key, fillLight, rim, ambient];
           }
         }
       };
@@ -747,15 +845,39 @@ export default function CasePreview({
 
         const idleFor = performance.now() - lastInteractionTime;
         const shouldAutoRotate =
-          currentAutoRotate && (!currentInteractive || idleFor > IDLE_TIMEOUT_MS);
+          currentAutoRotate &&
+          caseHoverTarget < 0.5 &&
+          (!currentInteractive || idleFor > IDLE_TIMEOUT_MS);
         if (shouldAutoRotate) {
-          targetRotationY += AUTO_ROTATE_SPEED * delta;
+          // Swing gently back and forth around the back face (Y = 0 is the back face)
+          // to showcase the case design and 3D depth without showing the blank front screen.
+          const time = performance.now() * 0.001;
+          targetRotationY = Math.sin(time * 0.6) * 0.5;
+          targetRotationX = Math.cos(time * 0.3) * 0.1;
         }
 
         currentRotationX += (targetRotationX - currentRotationX) * DRAG_DAMPING;
         currentRotationY += (targetRotationY - currentRotationY) * DRAG_DAMPING;
         phoneGroup.rotation.x = currentRotationX;
         phoneGroup.rotation.y = currentRotationY;
+
+        // Ease the case off / onto the phone body on hover.
+        caseHoverAmount += (caseHoverTarget - caseHoverAmount) * Math.min(1, delta * 9);
+        const separateT = caseHoverAmount * caseHoverAmount * (3 - 2 * caseHoverAmount); // smoothstep
+        caseGroup.position.z = CASE_REST_Z + (CASE_SEPARATE_Z - CASE_REST_Z) * separateT;
+        // Slide + tilt so the phone chassis peeks out from under the case.
+        caseGroup.position.y = 0.07 * separateT;
+        caseGroup.position.x = -0.05 * separateT;
+        caseGroup.rotation.x = -0.14 * separateT;
+        caseGroup.rotation.y = 0.22 * separateT;
+        caseGroup.rotation.z = -0.05 * separateT;
+        caseGroup.scale.setScalar(1 + 0.03 * separateT);
+
+        // Nudge the whole phone toward a 3/4 view while separated so the gap reads.
+        if (separateT > 0.01) {
+          targetRotationY += (0.55 - targetRotationY) * 0.04 * separateT;
+          targetRotationX += (0.12 - targetRotationX) * 0.04 * separateT;
+        }
 
         camera.position.set(0, 0, cameraDistance);
         camera.lookAt(0, 0, 0);
@@ -776,6 +898,10 @@ export default function CasePreview({
         container.removeEventListener("touchmove", onTouchMove);
         container.removeEventListener("touchend", onTouchEnd);
         container.removeEventListener("keydown", onKeyDown);
+        if (separateCaseOnHover) {
+          container.removeEventListener("pointerenter", onCaseHoverEnter);
+          container.removeEventListener("pointerleave", onCaseHoverLeave);
+        }
 
         scene.traverse((obj) => {
           const mesh = obj as ThreeNS.Mesh;
@@ -870,7 +996,9 @@ export default function CasePreview({
       aria-label={
         interactive
           ? `Interactive 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
-          : `Rotating 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
+          : separateCaseOnHover
+            ? `3D preview of your phone case — hover to lift the case off the phone`
+            : `Rotating 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
       }
       tabIndex={0}
       onFocus={() => setIsFocused(true)}
@@ -880,7 +1008,7 @@ export default function CasePreview({
         height: "100%",
         outline: "none",
         touchAction: "none",
-        boxShadow: isFocused ? "0 0 0 3px rgba(31,182,166,0.8)" : "none",
+        boxShadow: isFocused ? "0 0 0 3px rgba(255,45,149,0.85)" : "none",
       }}
     />
   );

@@ -3,6 +3,7 @@ import { currentCart } from "@wix/ecom";
 import CasePreview from "./CasePreview";
 import type { LightingPreset } from "./CasePreview";
 import { generateDesigns } from "../lib/generateDesigns";
+import { optimizeImage } from "../lib/image";
 import type { Style, Design } from "../lib/wix";
 import {
   MODELS,
@@ -78,6 +79,7 @@ export default function Studio({
   initialPrompt,
 }: StudioProps) {
   const [step, setStep] = useState<Step>(1);
+  const [prevStep, setPrevStep] = useState<Step>(1);
   const [maxStepReached, setMaxStepReached] = useState<number>(1);
 
   // Step 1 — model
@@ -242,14 +244,21 @@ export default function Studio({
   const goNext = () => {
     if (!canContinueFromStep(step)) return;
     const next = Math.min(7, step + 1) as Step;
+    setPrevStep(step);
     setStep(next);
     setMaxStepReached((m) => Math.max(m, next));
   };
 
-  const goBack = () => setStep((s) => Math.max(1, s - 1) as Step);
+  const goBack = () => {
+    setPrevStep(step);
+    setStep((s) => Math.max(1, s - 1) as Step);
+  };
 
   const goToStep = (s: Step) => {
-    if (s <= maxStepReached) setStep(s);
+    if (s <= maxStepReached && s !== step) {
+      setPrevStep(step);
+      setStep(s);
+    }
   };
 
   const resetStudio = () => {
@@ -535,7 +544,7 @@ export default function Studio({
                 className={`concept-card${selectedDesign?.id === c.id ? " is-selected" : ""}`}
                 onClick={() => selectConcept(c)}
               >
-                <img src={c.image} alt={c.title} className="concept-thumb" />
+                <img src={optimizeImage(c.image)} alt={c.title} className="concept-thumb" />
                 <span className="concept-title">{c.title}</span>
               </button>
             ))}
@@ -789,6 +798,9 @@ export default function Studio({
       mainContent = null;
   }
 
+  // Determine direction for step animation
+  const direction = step > prevStep ? "forward" : "back";
+
   return (
     <section className="studio-page" aria-label="AI Design Studio">
       <div className="studio-intro">
@@ -838,10 +850,16 @@ export default function Studio({
               </div>
               {finish && <p className="studio-hint price-inline">${price} · {finish}</p>}
             </div>
-            <div className="studio-controls-col">{mainContent}</div>
+            <div className="studio-controls-col">
+              <div key={step} className="step-container" data-direction={direction}>
+                {mainContent}
+              </div>
+            </div>
           </div>
         ) : (
-          mainContent
+          <div key={step} className="step-container" data-direction={direction}>
+            {mainContent}
+          </div>
         )}
 
         {step !== 7 && (

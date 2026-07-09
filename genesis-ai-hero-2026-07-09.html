@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Genesis AI Hero</title>
+  
+  <style>
+
+
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .tool-canvas-area {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    canvas { display: block; background: transparent; }
+
+  </style>
+</head>
+<body>
+  <div class="tool-canvas-area">
+    
+  </div>
+
+  <script>
+
+    // Mobile perf: cap devicePixelRatio so canvases allocate fewer pixels.
+    (function() {
+      var _isMobile = window.innerWidth <= 768;
+      if (_isMobile) {
+        var _nativeDPR = window.devicePixelRatio || 1;
+        var _cappedDPR = Math.min(1.5, _nativeDPR);
+        Object.defineProperty(window, 'devicePixelRatio', { get: function() { return _cappedDPR; } });
+      }
+    })();
+
+    window.CanvasRuntimeAPI = (function() {
+      var _exportMode = 'auto';
+      var _exportWidth = 0;
+      var _exportHeight = 0;
+      var _bgState = { mode: 'none', color: '#ffffff', imageEl: null, imageDataURL: null, fit: 'cover' };
+
+
+
+      var _canvas = document.getElementById('canvas');
+      var _area = _canvas ? _canvas.parentElement : document.querySelector('.tool-canvas-area');
+      var _resizeRAF = null;
+
+      function _detectCanvas() {
+        var r = window.renderer || window.threeRenderer;
+        if (r && r.domElement) {
+          _canvas = r.domElement;
+          _area = _canvas.parentElement;
+          return;
+        }
+        var area = document.querySelector('.tool-canvas-area');
+        if (area) {
+          var canvases = area.querySelectorAll('canvas');
+          var visible = [];
+          for (var j = 0; j < canvases.length; j++) {
+            if (canvases[j].style.display !== 'none') visible.push(canvases[j]);
+          }
+          if (visible.length >= 1) {
+            var largest = visible[0];
+            for (var i = 1; i < visible.length; i++) {
+              if (visible[i].width * visible[i].height > largest.width * largest.height) {
+                largest = visible[i];
+              }
+            }
+            _canvas = largest;
+            _area = _canvas.parentElement;
+          }
+        }
+      }
+
+
+
+
+      function _applyBgCSS() {
+        _detectCanvas();
+        if (!_canvas) return;
+        if (_bgState.mode === 'none') {
+          _canvas.style.background = '';
+        } else if (_bgState.mode === 'solid') {
+          _canvas.style.background = _bgState.color;
+        } else if (_bgState.mode === 'image') {
+          if (_bgState.imageDataURL) {
+            var fitCss = _bgState.fit === 'fill' ? '100% 100%' : _bgState.fit;
+            _canvas.style.backgroundColor = _bgState.color;
+            _canvas.style.backgroundImage = 'url("' + _bgState.imageDataURL + '")';
+            _canvas.style.backgroundSize = fitCss;
+            _canvas.style.backgroundPosition = 'center';
+            _canvas.style.backgroundRepeat = 'no-repeat';
+          } else {
+            _canvas.style.backgroundImage = '';
+            _canvas.style.backgroundColor = _bgState.color;
+          }
+        }
+      }
+
+      function setBackground(state) {
+        state = state || {};
+        _bgState.mode = state.mode || 'none';
+        _bgState.color = state.color || '#ffffff';
+        _bgState.fit = state.fit || 'cover';
+        if (state.image && state.image !== _bgState.imageDataURL) {
+          _bgState.imageDataURL = state.image;
+          _bgState.imageEl = null;
+          _applyBgCSS();
+          var img = new Image();
+          img.onload = function() {
+            if (_bgState.imageDataURL !== state.image) return;
+            _bgState.imageEl = img;
+          };
+          img.src = state.image;
+        } else if (!state.image) {
+          _bgState.imageEl = null;
+          _bgState.imageDataURL = null;
+        }
+        _applyBgCSS();
+      }
+
+      function getBackground() {
+        return { mode: _bgState.mode, color: _bgState.color, fit: _bgState.fit };
+      }
+
+      function setCanvas(el) {
+        _canvas = el;
+        _area = el ? el.parentElement : document.querySelector('.tool-canvas-area');
+        if (_bgState.mode !== 'none') _applyBgCSS();
+      }
+
+      function setExportDimensions(w, h) {
+        _detectCanvas();
+        _exportMode = 'fixed';
+        _exportWidth = Math.max(1, Math.round(w || 1));
+        _exportHeight = Math.max(1, Math.round(h || 1));
+        if (_canvas) {
+          _canvas.width = _exportWidth;
+          _canvas.height = _exportHeight;
+        }
+        if (window.p5 && typeof window.resizeCanvas === 'function') window.resizeCanvas(_exportWidth, _exportHeight);
+        if (window.renderer && window.renderer.setSize) window.renderer.setSize(_exportWidth, _exportHeight, false);
+        if (window.hydra && window.hydra.setResolution) window.hydra.setResolution(_exportWidth, _exportHeight);
+        window.dispatchEvent(new Event('resize'));
+      }
+
+      function fitToArea() {}
+
+      function getExportDimensions() {
+        if (_exportMode === 'fixed') return { width: _exportWidth, height: _exportHeight, mode: 'fixed' };
+        _detectCanvas();
+        return { width: _canvas ? _canvas.width : 0, height: _canvas ? _canvas.height : 0, mode: 'auto' };
+      }
+
+      function isFixedExportMode() { return _exportMode === 'fixed'; }
+
+      function _onAreaResize() {
+        var r = window.renderer || window.threeRenderer;
+        if (!r || !r.setSize) return;
+        if (_resizeRAF) cancelAnimationFrame(_resizeRAF);
+        _resizeRAF = requestAnimationFrame(function() {
+          _detectCanvas();
+          if (!_area) return;
+          var w = _area.clientWidth;
+          var h = _area.clientHeight;
+          if (w <= 0 || h <= 0) return;
+          r.setSize(w, h);
+          window.dispatchEvent(new Event('resize'));
+        });
+      }
+      if (typeof ResizeObserver !== 'undefined' && _area) {
+        new ResizeObserver(_onAreaResize).observe(_area);
+      }
+      window.addEventListener('resize', _onAreaResize);
+
+      setTimeout(function() {
+        _detectCanvas();
+        if (_bgState.mode !== 'none') _applyBgCSS();
+      }, 500);
+
+      function getMousePos(event) {
+        _detectCanvas();
+        if (!_canvas) return { x: 0, y: 0 };
+        var rect = _canvas.getBoundingClientRect();
+        var scaleX = _canvas.width / rect.width;
+        var scaleY = _canvas.height / rect.height;
+        var touch = event.touches && event.touches[0]
+          ? event.touches[0]
+          : event.changedTouches && event.changedTouches[0]
+          ? event.changedTouches[0]
+          : null;
+        var clientX = touch ? touch.clientX : event.clientX;
+        var clientY = touch ? touch.clientY : event.clientY;
+        return {
+          x: (clientX - rect.left) * scaleX,
+          y: (clientY - rect.top) * scaleY
+        };
+      }
+
+      function drawImage(ctx, img, x, y, w, h, fit) {
+        if (!img || !img.width || !img.height) return;
+        fit = fit || 'cover';
+        var ar = img.width / img.height;
+        var car = w / h;
+        var sx = 0, sy = 0, sw = img.width, sh = img.height;
+        var dx = x, dy = y, dw = w, dh = h;
+
+        if (fit === 'cover') {
+          if (ar > car) { sw = img.height * car; sx = (img.width - sw) / 2; }
+          else { sh = img.width / car; sy = (img.height - sh) / 2; }
+        } else if (fit === 'contain') {
+          if (ar > car) { dh = w / ar; dy = y + (h - dh) / 2; }
+          else { dw = h * ar; dx = x + (w - dw) / 2; }
+        }
+
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+      }
+
+      return {
+        setCanvas: setCanvas,
+        setBackground: setBackground,
+        getBackground: getBackground,
+        setExportDimensions: setExportDimensions,
+        fitToArea: fitToArea,
+        getExportDimensions: getExportDimensions,
+        isFixedExportMode: isFixedExportMode,
+
+
+        getMousePos: getMousePos,
+        drawImage: drawImage
+      };
+    })();
+
+    window.ChatoolyCanvas = window.CanvasRuntimeAPI;
+    window.ChatoolyControls = window.ControlsAPI;
+
+    (function() {
+      var srcDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+      if (srcDesc && srcDesc.set) {
+        Object.defineProperty(HTMLImageElement.prototype, 'src', {
+          get: srcDesc.get,
+          set: function(val) {
+            if (val && typeof val === 'string' && !val.startsWith('data:') && !this.crossOrigin) {
+              this.crossOrigin = 'anonymous';
+            }
+            srcDesc.set.call(this, val);
+          },
+          configurable: true,
+          enumerable: true
+        });
+      }
+    })();
+
+    window.loadImage = function(src, callback) {
+      var img = new Image();
+      if (src && typeof src === 'string' && !src.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = function() { if (callback) callback(img); };
+      img.onerror = function() { console.error('Failed to load image:', src); };
+      img.src = src;
+      return img;
+    };
+  
+  </script>
+  <script type="module">
+    // Standalone Three.js mode — renderer creates and owns the visible canvas
+    var controls = (function() {
+      var _v = {"introSpeed":1,"brandName":"CASEONE","statusMessages":"Reading your idea..., Understanding your style..., Creating something unique..., Rendering your case..., One of One.","typography":{"family":"Neue Haas Grotesk Display Pro","style":"normal","weight":400,"url":null},"textColor":"#FF5A47","particleCount":200,"connectionRadius":1.2,"particleColor":"#1FB6A6","orbitSpeed":1,"caseAccentColor":"#FF5A47","scanLineIntensity":0.8,"idleRotationSpeed":0.5,"ambientRingScale":1.5,"persistentFloatIntensity":0.6,"cameraState":{"version":1,"position":[-6.195466054717598,0.023376501033831126,-2.91953205175938],"target":[0,0,0],"zoom":1},"__sys_bg":{"mode":"solid","color":"#ffffff","image":null,"fit":"cover"}};
+      var _defaults = JSON.parse(JSON.stringify(_v));
+      function _hexToRgb(hex) {
+        var h = String(hex || '').replace('#', '');
+        if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+        if (h.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(h)) return null;
+        return {
+          r: parseInt(h.slice(0, 2), 16),
+          g: parseInt(h.slice(2, 4), 16),
+          b: parseInt(h.slice(4, 6), 16)
+        };
+      }
+      function _clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+      function _hexToRgbaCss(hex, opacity0to100) {
+        var rgb = _hexToRgb(hex);
+        if (!rgb) return 'rgba(0,0,0,1)';
+        var op = opacity0to100 != null && !isNaN(Number(opacity0to100)) ? Number(opacity0to100) : 100;
+        var a = _clamp(op, 0, 100) / 100;
+        return 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a + ')';
+      }
+      var api = {
+        get: function(k) { return _v[k]; },
+        getAll: function() { return Object.assign({}, _v); },
+        getDefaults: function() { return JSON.parse(JSON.stringify(_defaults)); },
+        getColorWithAlpha: function(baseKey) { return _hexToRgbaCss(_v[baseKey], _v[baseKey + '_opacity']); },
+        set: function(k, v) { _v[k] = v; },
+        onChange: function() {},
+        onAny: function() {},
+        onAction: function() {}
+      };
+      window.ControlsAPI = api;
+      window.ChatoolyControls = api;
+      return api;
+    })();
+
+    
+
+    // Creative Code
+    import * as THREE from 'https://esm.sh/three@0.170.0';
+import { OrbitControls } from 'https://esm.sh/three@0.170.0/addons/controls/OrbitControls.js';
+import gsap from 'https://esm.sh/gsap@3.12.5';
+
+// --- Scene Setup ---
+const scene = new THREE.Scene();
+const area = document.querySelector('.tool-canvas-area');
+
+const camera = new THREE.PerspectiveCamera(45, area.clientWidth / area.clientHeight, 0.1, 100);
+camera.position.set(0, 0, 8);
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  alpha: true,
+  preserveDrawingBuffer: true,
+});
+renderer.setSize(area.clientWidth, area.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+area.appendChild(renderer.domElement);
+
+window.renderer = renderer;
+window.scene = scene;
+window.camera = camera;
+
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.05;
+orbitControls.maxDistance = 15;
+orbitControls.minDistance = 3;
+
+// --- Lighting ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+scene.add(ambientLight);
+
+const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight1.position.set(5, 10, 7);
+scene.add(dirLight1);
+
+const dirLight2 = new THREE.DirectionalLight(0x1FB6A6, 1.0);
+dirLight2.position.set(-5, -5, -5);
+scene.add(dirLight2);
+
+const pointLight = new THREE.PointLight(0xFF5A47, 2, 10);
+pointLight.position.set(0, 0, 2);
+scene.add(pointLight);
+
+// --- State Variables ---
+let timeline = null;
+let isIntroComplete = false;
+
+const animState = {
+  morphProgress: 0,
+  plexusAlpha: 0,
+  scanProgress: 0,
+  logoAlpha: 0,
+  statusAlpha: 0,
+  ambientRingAlpha: 0,
+  ambientRingScaleVal: 0.1
+};
+
+let statusTextIndex = 0;
+
+const statusStrings = [
+  "Reading your idea...",
+  "Understanding your style...",
+  "Creating something unique...",
+  "Rendering your case...",
+  "One of One."
+];
+
+// --- HUD / Typography Group (Screen-aligned) ---
+const hudGroup = new THREE.Group();
+hudGroup.position.set(0, 0, -3); // Place in front of camera
+camera.add(hudGroup);
+scene.add(camera);
+
+// --- Create Text Sprites ---
+let logoSprite = null;
+let statusSprite = null;
+
+function updateTypography() {
+  if (logoSprite) hudGroup.remove(logoSprite);
+  if (statusSprite) hudGroup.remove(statusSprite);
+
+  const brand = controls.get('brandName') || "CASEONE";
+  const font = controls.get('typography').family;
+  const color = controls.get('textColor');
+
+  // Logo Sprite
+  const logoTex = createTextTexture(brand, font, 48, color, 12);
+  const logoMat = new THREE.SpriteMaterial({ map: logoTex, transparent: true, opacity: animState.logoAlpha });
+  logoSprite = new THREE.Sprite(logoMat);
+  logoSprite.scale.set(3, 0.75, 1);
+  logoSprite.position.set(0, 0.4, 0);
+  hudGroup.add(logoSprite);
+
+  // Status Sprite
+  const currentStatus = statusStrings[statusTextIndex] || "";
+  const statusTex = createTextTexture(currentStatus, font, 20, "#1FB6A6", 2);
+  const statusMat = new THREE.SpriteMaterial({ map: statusTex, transparent: true, opacity: animState.statusAlpha });
+  statusSprite = new THREE.Sprite(statusMat);
+  statusSprite.scale.set(2.5, 0.6, 1);
+  statusSprite.position.set(0, -0.4, 0);
+  hudGroup.add(statusSprite);
+}
+
+function createTextTexture(text, fontName, fontSize, color, letterSpacing = 0) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const scale = 4;
+  canvas.width = 1024 * scale;
+  canvas.height = 256 * scale;
+  
+  ctx.scale(scale, scale);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.font = `500 ${fontSize}px "${fontName}", sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  if (letterSpacing > 0) {
+    ctx.letterSpacing = `${letterSpacing}px`;
+  }
+  
+  ctx.fillText(text, 512, 128);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+// --- Case Geometry & Materials ---
+const caseGroup = new THREE.Group();
+scene.add(caseGroup);
+
+// Proportions of a premium iPhone Pro
+const caseWidth = 2.3;
+const caseHeight = 4.7;
+const caseDepth = 0.28;
+const caseRadius = 0.45;
+
+// Helper to create a clean, centered rounded rectangle path
+function createRoundedRectPath(w, h, r) {
+  const path = new THREE.Shape();
+  path.moveTo(0, h/2);
+  path.lineTo(w/2 - r, h/2);
+  path.quadraticCurveTo(w/2, h/2, w/2, h/2 - r);
+  path.lineTo(w/2, -h/2 + r);
+  path.quadraticCurveTo(w/2, -h/2, w/2 - r, -h/2);
+  path.lineTo(-w/2 + r, -h/2);
+  path.quadraticCurveTo(-w/2, -h/2, -w/2, -h/2 + r);
+  path.lineTo(-w/2, h/2 - r);
+  path.quadraticCurveTo(-w/2, h/2, -w/2 + r, h/2);
+  path.lineTo(0, h/2);
+  return path;
+}
+
+const shape = createRoundedRectPath(caseWidth, caseHeight, caseRadius);
+
+const extrudeSettings = {
+  depth: caseDepth,
+  bevelEnabled: true,
+  bevelSegments: 8,
+  steps: 2,
+  bevelSize: 0.04,
+  bevelThickness: 0.04
+};
+
+const caseGeometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+caseGeometry.center();
+
+// Custom Shader Material for the glowing scan & glass effect with proper Blinn-Phong lighting
+const caseMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: true,
+  uniforms: {
+    uColor: { value: new THREE.Color(controls.get('caseAccentColor')) },
+    uScanProgress: { value: 0 },
+    uScanIntensity: { value: 0 },
+    uOpacity: { value: 0 },
+    uTime: { value: 0 }
+  },
+  vertexShader: `
+    varying vec3 vPosition;
+    varying vec3 vNormal;
+    varying vec3 vViewPosition;
+    void main() {
+      vPosition = position;
+      vNormal = normalize(normalMatrix * normal);
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      vViewPosition = -mvPosition.xyz;
+      gl_Position = projectionMatrix * mvPosition;
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vPosition;
+    varying vec3 vNormal;
+    varying vec3 vViewPosition;
+    uniform vec3 uColor;
+    uniform float uScanProgress;
+    uniform float uScanIntensity;
+    uniform float uOpacity;
+    uniform float uTime;
+
+    void main() {
+      vec3 normal = normalize(vNormal);
+      vec3 viewDir = normalize(vViewPosition);
+      
+      // Simple lighting
+      vec3 lightDir = normalize(vec3(5.0, 5.0, 4.0));
+      float diffuse = max(dot(normal, lightDir), 0.0);
+      
+      // Specular
+      vec3 halfDir = normalize(lightDir + viewDir);
+      float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * 0.5;
+      
+      // Fresnel / Rim light
+      float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+      
+      // Scan line sweep along Y axis
+      float y = vPosition.y;
+      float scanY = mix(2.5, -2.5, uScanProgress);
+      float dist = abs(y - scanY);
+      float scanGlow = exp(-dist * dist * 15.0) * uScanIntensity;
+      
+      // Combine colors
+      vec3 baseColor = mix(vec3(0.05, 0.05, 0.07), uColor, 0.4);
+      vec3 litColor = baseColor * (diffuse * 0.6 + 0.4) + vec3(1.0) * spec + uColor * fresnel * 0.3;
+      
+      // Add scan line glow
+      vec3 finalColor = mix(litColor, uColor * 2.0, scanGlow);
+      
+      float alpha = uOpacity;
+      if (uOpacity < 1.0) {
+        alpha = (fresnel * 0.5 + scanGlow) * uOpacity;
+      }
+      
+      gl_FragColor = vec4(finalColor, alpha);
+    }
+  `
+});
+
+const caseMesh = new THREE.Mesh(caseGeometry, caseMaterial);
+caseGroup.add(caseMesh);
+
+// Inner phone body representation (sleek dark glass)
+const innerGeometry = new THREE.BoxGeometry(caseWidth - 0.08, caseHeight - 0.08, caseDepth - 0.04);
+const innerMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0x111115,
+  roughness: 0.1,
+  metalness: 0.9,
+  transmission: 0.6,
+  thickness: 0.5,
+  transparent: true,
+  opacity: 0
+});
+const innerMesh = new THREE.Mesh(innerGeometry, innerMaterial);
+innerMesh.position.z = 0.01;
+caseGroup.add(innerMesh);
+
+// --- Screen / Front Face ---
+const screenGeo = new THREE.PlaneGeometry(caseWidth - 0.08, caseHeight - 0.08);
+const screenMat = new THREE.ShaderMaterial({
+  transparent: true,
+  uniforms: {
+    uOpacity: { value: 0 },
+    uTime: { value: 0 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec2 vUv;
+    uniform float uOpacity;
+    uniform float uTime;
+    void main() {
+      // Beautiful premium dark gradient (Teal to Coral/Purple)
+      vec3 color1 = vec3(0.05, 0.08, 0.1); // Deep teal
+      vec3 color2 = vec3(0.15, 0.05, 0.08); // Deep coral/burgundy
+      vec3 color = mix(color1, color2, vUv.y + sin(uTime * 0.5) * 0.1);
+      
+      // Add a subtle glowing diagonal wave
+      float wave = sin(vUv.x * 3.0 - vUv.y * 3.0 + uTime * 0.8) * 0.5 + 0.5;
+      color += vec3(0.12, 0.07, 0.1) * wave * 0.3;
+      
+      gl_FragColor = vec4(color, uOpacity);
+    }
+  `
+});
+const screenMesh = new THREE.Mesh(screenGeo, screenMat);
+screenMesh.position.set(0, 0, caseDepth/2 + 0.01);
+caseGroup.add(screenMesh);
+
+// --- Dynamic Island ---
+const islandShape = createRoundedRectPath(0.6, 0.18, 0.09);
+const islandGeo = new THREE.ShapeGeometry(islandShape);
+const islandMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0 });
+const islandMesh = new THREE.Mesh(islandGeo, islandMat);
+islandMesh.position.set(0, caseHeight/2 - 0.4, caseDepth/2 + 0.012);
+caseGroup.add(islandMesh);
+
+// --- Side Buttons ---
+const buttonMat = new THREE.MeshPhysicalMaterial({
+  color: 0x222225,
+  roughness: 0.2,
+  metalness: 0.8,
+  transparent: true,
+  opacity: 0
+});
+
+// Power button (Right side)
+const powerBtnGeo = new THREE.BoxGeometry(0.04, 0.5, 0.08);
+const powerBtn = new THREE.Mesh(powerBtnGeo, buttonMat);
+powerBtn.position.set(caseWidth/2 + 0.01, 0.5, 0);
+caseGroup.add(powerBtn);
+
+// Volume Up (Left side)
+const volUpGeo = new THREE.BoxGeometry(0.04, 0.25, 0.08);
+const volUp = new THREE.Mesh(volUpGeo, buttonMat);
+volUp.position.set(-caseWidth/2 - 0.01, 0.8, 0);
+caseGroup.add(volUp);
+
+// Volume Down (Left side)
+const volDown = new THREE.Mesh(volUpGeo, buttonMat);
+volDown.position.set(-caseWidth/2 - 0.01, 0.4, 0);
+caseGroup.add(volDown);
+
+// Action button (Left side)
+const actionBtnGeo = new THREE.BoxGeometry(0.04, 0.15, 0.08);
+const actionBtn = new THREE.Mesh(actionBtnGeo, buttonMat);
+actionBtn.position.set(-caseWidth/2 - 0.01, 1.2, 0);
+caseGroup.add(actionBtn);
+
+// --- Camera Bump & Lenses ---
+const bumpWidth = 1.0;
+const bumpHeight = 1.0;
+const bumpRadius = 0.2;
+const bumpShape = createRoundedRectPath(bumpWidth, bumpHeight, bumpRadius);
+
+const bumpExtrudeSettings = {
+  depth: 0.08,
+  bevelEnabled: true,
+  bevelSegments: 4,
+  steps: 1,
+  bevelSize: 0.02,
+  bevelThickness: 0.02
+};
+const bumpGeometry = new THREE.ExtrudeGeometry(bumpShape, bumpExtrudeSettings);
+bumpGeometry.center();
+const bumpMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0x18181c,
+  roughness: 0.15,
+  metalness: 0.9,
+  clearcoat: 1.0,
+  clearcoatRoughness: 0.1,
+  transparent: true,
+  opacity: 0
+});
+const cameraBump = new THREE.Mesh(bumpGeometry, bumpMaterial);
+cameraBump.position.set(-0.45, 1.35, -caseDepth/2 - 0.04);
+cameraBump.rotation.y = Math.PI; // Face outwards on the back
+caseGroup.add(cameraBump);
+
+// Lenses Group
+const lensesGroup = new THREE.Group();
+lensesGroup.position.set(-0.45, 1.35, -caseDepth/2 - 0.08);
+caseGroup.add(lensesGroup);
+
+const lensRingGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.08, 32);
+lensRingGeo.rotateX(Math.PI / 2);
+const lensRingMat = new THREE.MeshPhysicalMaterial({
+  color: 0x2d2d32,
+  metalness: 0.9,
+  roughness: 0.1,
+  transparent: true,
+  opacity: 0
+});
+
+const lensGlassGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.02, 32);
+lensGlassGeo.rotateX(Math.PI / 2);
+const lensGlassMat = new THREE.MeshPhysicalMaterial({
+  color: 0x050505,
+  roughness: 0.0,
+  transmission: 0.9,
+  thickness: 0.1,
+  transparent: true,
+  opacity: 0
+});
+
+// Helper to add a lens
+function addLens(lx, ly) {
+  const ring = new THREE.Mesh(lensRingGeo, lensRingMat);
+  ring.position.set(lx, ly, -0.04);
+  lensesGroup.add(ring);
+
+  const glass = new THREE.Mesh(lensGlassGeo, lensGlassMat);
+  glass.position.set(lx, ly, -0.08);
+  lensesGroup.add(glass);
+}
+
+// iPhone Pro 3-lens layout relative to bump center
+addLens(-0.22, 0.22);  // Top Left
+addLens(-0.22, -0.22); // Bottom Left
+addLens(0.22, 0.0);    // Right Center
+
+// Add Flash
+const flashGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.01, 16);
+flashGeo.rotateX(Math.PI / 2);
+const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+const flash = new THREE.Mesh(flashGeo, flashMat);
+flash.position.set(0.2, 0.25, -caseDepth/2 - 0.09);
+caseGroup.add(flash);
+
+// Add LiDAR
+const lidarGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.01, 16);
+lidarGeo.rotateX(Math.PI / 2);
+const lidarMat = new THREE.MeshPhysicalMaterial({ color: 0x101012, roughness: 0.5, transparent: true, opacity: 0 });
+const lidar = new THREE.Mesh(lidarGeo, lidarMat);
+lidar.position.set(0.2, -0.25, -caseDepth/2 - 0.09);
+caseGroup.add(lidar);
+
+// --- Ambient Ring ---
+const ringGeo = new THREE.TorusGeometry(3.2, 0.015, 8, 120);
+const ringMat = new THREE.MeshBasicMaterial({
+  color: new THREE.Color(controls.get('particleColor')),
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending
+});
+const ambientRing = new THREE.Mesh(ringGeo, ringMat);
+ambientRing.position.set(0, 0, -1);
+scene.add(ambientRing);
+
+// --- Particle System ---
+const maxParticles = 400;
+const particlePositions = new Float32Array(maxParticles * 3);
+const particleAlphas = new Float32Array(maxParticles);
+
+const particlesData = [];
+
+// Generate particle states
+for (let i = 0; i < maxParticles; i++) {
+  // Random initial position (Phase 1)
+  const randomPos = new THREE.Vector3(
+    (Math.random() - 0.5) * 10,
+    (Math.random() - 0.5) * 10,
+    (Math.random() - 0.5) * 10
+  );
+
+  // Swirling orbit position (Phase 2)
+  const angle = Math.random() * Math.PI * 2;
+  const radius = 1.5 + Math.random() * 2.5;
+  const height = (Math.random() - 0.5) * 4;
+  const orbitPos = new THREE.Vector3(
+    Math.cos(angle) * radius,
+    height,
+    Math.sin(angle) * radius
+  );
+
+  // Case surface position (Phase 3)
+  const casePos = getRandomCasePoint();
+
+  particlesData.push({
+    randomPos,
+    orbitPos,
+    casePos,
+    currentPos: randomPos.clone(),
+    speed: 0.2 + Math.random() * 0.8,
+    phase: Math.random() * Math.PI * 2,
+    alpha: 0
+  });
+
+  particlePositions[i * 3] = randomPos.x;
+  particlePositions[i * 3 + 1] = randomPos.y;
+  particlePositions[i * 3 + 2] = randomPos.z;
+  particleAlphas[i] = 0;
+}
+
+function getRandomCasePoint() {
+  const w = caseWidth;
+  const h = caseHeight;
+  const d = caseDepth;
+  const r = Math.random();
+  if (r < 0.6) {
+    // Front or back face
+    const px = (Math.random() - 0.5) * (w - 0.1);
+    const py = (Math.random() - 0.5) * (h - 0.1);
+    const pz = (Math.random() > 0.5 ? 1 : -1) * (d / 2 + 0.02);
+    return new THREE.Vector3(px, py, pz);
+  } else {
+    // Sides
+    const theta = Math.random() * Math.PI * 2;
+    const px = Math.cos(theta) * (w / 2);
+    const py = Math.sin(theta) * (h / 2);
+    const pz = (Math.random() - 0.5) * d;
+    return new THREE.Vector3(px, py, pz);
+  }
+}
+
+const particleGeometry = new THREE.BufferGeometry();
+particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+// Custom shader for glowing particles with individual alphas
+const particleMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  uniforms: {
+    uColor: { value: new THREE.Color(controls.get('particleColor')) },
+    uSize: { value: 8.0 }
+  },
+  vertexShader: `
+    attribute float alpha;
+    varying float vAlpha;
+    uniform float uSize;
+    void main() {
+      vAlpha = 1.0; // Will be modulated in loop
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = uSize * (300.0 / -mvPosition.z);
+      gl_Position = projectionMatrix * mvPosition;
+    }
+  `,
+  fragmentShader: `
+    varying float vAlpha;
+    uniform vec3 uColor;
+    void main() {
+      float dist = length(gl_PointCoord - vec2(0.5));
+      if (dist > 0.5) discard;
+      float glow = exp(-dist * 4.0);
+      gl_FragColor = vec4(uColor, glow * 0.8);
+    }
+  `
+});
+
+const particlePoints = new THREE.Points(particleGeometry, particleMaterial);
+scene.add(particlePoints);
+
+// --- Plexus Lines ---
+const linePositions = new Float32Array(maxParticles * maxParticles * 3);
+const lineColors = new Float32Array(maxParticles * maxParticles * 3);
+
+const lineGeometry = new THREE.BufferGeometry();
+lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+lineGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3));
+
+const lineMaterial = new THREE.LineBasicMaterial({
+  vertexColors: true,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+
+const plexusLines = new THREE.LineSegments(lineGeometry, lineMaterial);
+scene.add(plexusLines);
+
+// --- Sequence Orchestration (GSAP Timeline) ---
+function startSequence() {
+  if (timeline) timeline.kill();
+  
+  isIntroComplete = false;
+  
+  // Reset animState
+  animState.morphProgress = 0;
+  animState.plexusAlpha = 0;
+  animState.scanProgress = 0;
+  animState.logoAlpha = 0;
+  animState.statusAlpha = 0;
+  animState.ambientRingAlpha = 0;
+  animState.ambientRingScaleVal = 0.1;
+
+  statusTextIndex = 0;
+
+  // Reset case and camera
+  caseGroup.rotation.set(0, 0, 0);
+  caseMaterial.uniforms.uOpacity.value = 0;
+  caseMaterial.uniforms.uScanIntensity.value = 0;
+  
+  // Reset all phone parts opacity
+  const fadeMaterials = [
+    innerMaterial,
+    bumpMaterial,
+    lensRingMat,
+    lensGlassMat,
+    buttonMat,
+    lidarMat
+  ];
+  fadeMaterials.forEach(m => m.opacity = 0);
+  
+  screenMat.uniforms.uOpacity.value = 0;
+  islandMat.opacity = 0;
+  flashMat.opacity = 0;
+  
+  camera.position.set(0, 0, 8);
+  orbitControls.target.set(0, 0, 0);
+
+  updateTypography();
+
+  const speedScale = 1 / (controls.get('introSpeed') || 1);
+
+  timeline = gsap.timeline({
+    onComplete: () => {
+      isIntroComplete = true;
+    }
+  });
+
+  // Phase 1: Empty Canvas -> Particles Fade In
+  timeline.to({}, { duration: 1.5 * speedScale }); // Ambient pause
+
+  // Phase 2: AI Awakens (Swirling & Plexus)
+  timeline.to(animState, {
+    morphProgress: 1.0,
+    plexusAlpha: 0.6,
+    duration: 3.0 * speedScale,
+    ease: "power2.inOut"
+  });
+
+  // Phase 3: Shape Formation (Particles converge to Case)
+  timeline.to(animState, {
+    morphProgress: 2.0,
+    plexusAlpha: 0.2,
+    duration: 2.5 * speedScale,
+    ease: "power3.inOut"
+  });
+
+  // Fade in the case silhouette outline
+  timeline.to(caseMaterial.uniforms.uOpacity, {
+    value: 1.0,
+    duration: 1.5 * speedScale,
+    ease: "power2.out"
+  }, "-=1.5");
+
+  // Phase 4: AI Generation (Scan Line Sweep)
+  timeline.to(caseMaterial.uniforms.uScanIntensity, {
+    value: 1.5,
+    duration: 0.5 * speedScale
+  });
+
+  timeline.to(animState, {
+    scanProgress: 1.0,
+    duration: 2.5 * speedScale,
+    ease: "power1.inOut"
+  });
+
+  // Fade in solid phone body and camera parts during scan
+  timeline.to(fadeMaterials, {
+    opacity: 0.85,
+    duration: 2.0 * speedScale,
+    ease: "power2.inOut"
+  }, "-=2.0");
+
+  // Fade in screen and dynamic island
+  timeline.to(screenMat.uniforms.uOpacity, {
+    value: 1.0,
+    duration: 2.0 * speedScale,
+    ease: "power2.inOut"
+  }, "-=2.0");
+
+  timeline.to([islandMat, flashMat], {
+    opacity: 1.0,
+    duration: 2.0 * speedScale,
+    ease: "power2.inOut"
+  }, "-=2.0");
+
+  timeline.to(caseMaterial.uniforms.uScanIntensity, {
+    value: 0.2,
+    duration: 0.8 * speedScale
+  });
+
+  // Phase 5: CASEONE Reveal (Logo & Status Messages)
+  timeline.to(animState, {
+    logoAlpha: 1.0,
+    duration: 1.5 * speedScale,
+    ease: "power2.out",
+    onUpdate: updateTypography
+  });
+
+  // Cycle status messages
+  statusStrings.forEach((msg, index) => {
+    timeline.to(animState, {
+      statusAlpha: 0,
+      duration: 0.2 * speedScale,
+      onComplete: () => {
+        statusTextIndex = index;
+        updateTypography();
+      }
+    });
+    timeline.to(animState, {
+      statusAlpha: 1.0,
+      duration: 0.4 * speedScale,
+      onUpdate: updateTypography
+    });
+    timeline.to({}, { duration: 0.8 * speedScale }); // Pause on message
+  });
+
+  // Phase 6: Transition to Persistent State
+  timeline.to(animState, {
+    logoAlpha: 0,
+    statusAlpha: 0,
+    duration: 1.0 * speedScale,
+    ease: "power2.inOut",
+    onUpdate: updateTypography
+  });
+
+  // Scale up ambient ring
+  timeline.to(animState, {
+    ambientRingAlpha: 0.15,
+    ambientRingScaleVal: controls.get('ambientRingScale') || 1.5,
+    duration: 2.0 * speedScale,
+    ease: "power2.out"
+  }, "-=1.0");
+}
+
+// Start sequence initially
+startSequence();
+
+// Wire replay button
+controls.onAction('replay', () => {
+  startSequence();
+});
+
+// --- Animation Loop ---
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const delta = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  // Update uniforms
+  caseMaterial.uniforms.uColor.value.set(controls.get('caseAccentColor'));
+  caseMaterial.uniforms.uScanProgress.value = animState.scanProgress;
+  caseMaterial.uniforms.uTime.value = elapsed;
+  screenMat.uniforms.uTime.value = elapsed;
+  particleMaterial.uniforms.uColor.value.set(controls.get('particleColor'));
+  ringMat.color.set(controls.get('particleColor'));
+
+  // Update Ambient Ring
+  ambientRing.scale.setScalar(animState.ambientRingScaleVal);
+  ringMat.opacity = animState.ambientRingAlpha;
+  ambientRing.rotation.z = elapsed * 0.05;
+
+  // Update Particles Position based on Morph Progress
+  const positions = particleGeometry.attributes.position.array;
+  const count = Math.min(maxParticles, controls.get('particleCount'));
+
+  let lineIndex = 0;
+
+  for (let i = 0; i < maxParticles; i++) {
+    const p = particlesData[i];
+    if (i >= count) {
+      // Hide unused particles
+      positions[i * 3] = 9999;
+      positions[i * 3 + 1] = 9999;
+      positions[i * 3 + 2] = 9999;
+      continue;
+    }
+
+    let target = new THREE.Vector3();
+
+    if (animState.morphProgress < 1.0) {
+      // Interpolate between Random and Orbit
+      target.lerpVectors(p.randomPos, p.orbitPos, animState.morphProgress);
+    } else if (animState.morphProgress < 2.0) {
+      // Interpolate between Orbit and Case Surface
+      target.lerpVectors(p.orbitPos, p.casePos, animState.morphProgress - 1.0);
+    } else {
+      // Persistent Ambient Motion on Case Surface
+      target.copy(p.casePos);
+      
+      // Add subtle breathing/floating to case positions
+      const floatIntensity = controls.get('persistentFloatIntensity') * 0.05;
+      target.x += Math.sin(elapsed * p.speed + p.phase) * floatIntensity;
+      target.y += Math.cos(elapsed * p.speed * 0.8 + p.phase) * floatIntensity;
+    }
+
+    // Swirl effect during Phase 2
+    if (animState.morphProgress > 0.2 && animState.morphProgress < 1.8) {
+      const swirlSpeed = controls.get('orbitSpeed') * 0.5;
+      const angle = elapsed * swirlSpeed * p.speed;
+      const xRot = target.x * Math.cos(angle) - target.z * Math.sin(angle);
+      const zRot = target.x * Math.sin(angle) + target.z * Math.cos(angle);
+      target.x = xRot;
+      target.z = zRot;
+    }
+
+    // Smoothly interpolate current position to target
+    p.currentPos.lerp(target, 0.1);
+
+    positions[i * 3] = p.currentPos.x;
+    positions[i * 3 + 1] = p.currentPos.y;
+    positions[i * 3 + 2] = p.currentPos.z;
+  }
+
+  particleGeometry.attributes.position.needsUpdate = true;
+
+  // --- Plexus Line Connections ---
+  const linePosAttr = lineGeometry.attributes.position.array;
+  const lineColAttr = lineGeometry.attributes.color.array;
+  const connRadius = controls.get('connectionRadius');
+  const pColor = new THREE.Color(controls.get('particleColor'));
+
+  if (animState.plexusAlpha > 0.01) {
+    lineMaterial.opacity = animState.plexusAlpha;
+    
+    for (let i = 0; i < count; i++) {
+      const pi = particlesData[i].currentPos;
+      
+      for (let j = i + 1; j < count; j++) {
+        const pj = particlesData[j].currentPos;
+        const dist = pi.distanceTo(pj);
+
+        if (dist < connRadius) {
+          // Add line segment
+          linePosAttr[lineIndex * 3] = pi.x;
+          linePosAttr[lineIndex * 3 + 1] = pi.y;
+          linePosAttr[lineIndex * 3 + 2] = pi.z;
+
+          linePosAttr[(lineIndex + 1) * 3] = pj.x;
+          linePosAttr[(lineIndex + 1) * 3 + 1] = pj.y;
+          linePosAttr[(lineIndex + 1) * 3 + 2] = pj.z;
+
+          // Fade color based on distance
+          const alphaFactor = 1.0 - (dist / connRadius);
+          const c = pColor.clone().multiplyScalar(alphaFactor);
+
+          lineColAttr[lineIndex * 3] = c.r;
+          lineColAttr[lineIndex * 3 + 1] = c.g;
+          lineColAttr[lineIndex * 3 + 2] = c.b;
+
+          lineColAttr[(lineIndex + 1) * 3] = c.r;
+          lineColAttr[(lineIndex + 1) * 3 + 1] = c.g;
+          lineColAttr[(lineIndex + 1) * 3 + 2] = c.b;
+
+          lineIndex += 2;
+          if (lineIndex >= maxParticles * 10) break; // Cap lines for performance
+        }
+      }
+      if (lineIndex >= maxParticles * 10) break;
+    }
+  } else {
+    lineMaterial.opacity = 0;
+  }
+
+  // Clear remaining line segments
+  for (let k = lineIndex * 3; k < linePosAttr.length; k++) {
+    linePosAttr[k] = 0;
+    lineColAttr[k] = 0;
+  }
+
+  lineGeometry.attributes.position.needsUpdate = true;
+  lineGeometry.attributes.color.needsUpdate = true;
+
+  // --- Permanent Hero Motion (Phase 6 Idle) ---
+  if (isIntroComplete) {
+    const rotSpeed = controls.get('idleRotationSpeed') * 0.15;
+    caseGroup.rotation.y = elapsed * rotSpeed;
+    caseGroup.rotation.x = Math.sin(elapsed * 0.2) * 0.1;
+    
+    // Gentle camera breathing
+    const floatIntensity = controls.get('persistentFloatIntensity') * 0.2;
+    camera.position.y = Math.sin(elapsed * 0.5) * floatIntensity;
+  } else {
+    // Subtle rotation during intro
+    caseGroup.rotation.y = elapsed * 0.05;
+  }
+
+  orbitControls.update();
+  renderer.render(scene, camera);
+}
+
+// --- Camera Persistence ---
+function applyCamera(cam) {
+  if (!cam || !cam.position) return;
+  camera.position.fromArray(cam.position);
+  orbitControls.target.fromArray(cam.target || [0, 0, 0]);
+  if (typeof cam.zoom === 'number') { camera.zoom = cam.zoom; camera.updateProjectionMatrix(); }
+  orbitControls.update();
+}
+applyCamera(controls.get('cameraState'));
+controls.onChange('cameraState', applyCamera);
+
+orbitControls.addEventListener('end', () => {
+  controls.set('cameraState', {
+    version: 1,
+    position: camera.position.toArray(),
+    target: orbitControls.target.toArray(),
+    zoom: camera.zoom,
+  });
+});
+
+// --- Resize Handling ---
+window.addEventListener('resize', () => {
+  const w = area.clientWidth;
+  const h = area.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+});
+
+animate();
+
+
+    // System Background Wiring
+    if (typeof CanvasRuntimeAPI !== 'undefined') {
+      var __sysBgVal = controls.get('__sys_bg');
+      if (__sysBgVal) CanvasRuntimeAPI.setBackground(__sysBgVal);
+    }
+  </script>
+</body>
+</html>

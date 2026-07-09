@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Design } from "../lib/wix";
+import { optimizeImage } from "../lib/image";
 
 interface StylesWallProps {
   designs: Design[];
@@ -69,7 +70,7 @@ export default function StylesWall({ designs, className }: StylesWallProps) {
         <div className="styles-wall-tile" key={slot}>
           <img
             key={design.id}
-            src={design.image}
+            src={optimizeImage(design.image)}
             alt={design.title || "AI-generated case design"}
             loading="lazy"
           />

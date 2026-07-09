@@ -4,6 +4,7 @@ import RatingStrip from '../components/RatingStrip.astro';
 import TrustBadges from '../components/TrustBadges.astro';
 import { products } from '@wix/stores';
 import { getDesigns } from '../lib/wix';
+import { optimizeImage } from '../lib/image';
 import { PRODUCT_ID, FINISHES, UI_MODEL_LABELS } from '../lib/constants';
 
 // Static pricing per the seeded variants (scripts/seed-store.sh) — the
@@ -110,7 +111,7 @@ const faqs = [
 			{heroImages.length > 0 ? (
 				heroImages.slice(0, 3).map((src, i) => (
 					<img
-						src={src}
+						src={optimizeImage(src)}
 						alt={`Caseone custom iPhone case, view ${i + 1}`}
 						class="hero-gallery-image"
 						loading={i === 0 ? 'eager' : 'lazy'}
@@ -362,7 +363,7 @@ const faqs = [
 	.pricing-table td {
 		text-align: left;
 		padding: 1rem 1.25rem;
-		border-bottom: 1px solid rgba(23, 21, 31, 0.08);
+		border-bottom: 1px solid rgba(243, 239, 255, 0.08);
 	}
 
 	.pricing-table th {
@@ -416,6 +417,21 @@ const faqs = [
 
 	@media (max-width: 800px) {
 		.hero,
+		.feature-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.hero-actions {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.hero-actions .btn-primary,
+		.hero-actions .btn-ghost {
+			width: 100%;
+			justify-content: center;
+		}
+
 		.feature-grid {
 			grid-template-columns: 1fr;
 		}
@@ -508,5 +524,26 @@ const faqs = [
 		.sticky-buy-info {
 			display: none;
 		}
+
+		.pricing-table {
+			display: block;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.sticky-buy-bar-inner {
+			padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.sticky-buy-actions {
+			width: 100%;
+			justify-content: space-between;
+		}
+
+		.sticky-buy-actions .btn-primary {
+			flex: 1;
+			justify-content: center;
+		}
 	}
 </style>
+

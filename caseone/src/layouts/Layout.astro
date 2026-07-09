@@ -1,15 +1,19 @@
 ---
+import { ViewTransitions } from 'astro:transitions';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
+import GenesisIntro from '../components/GenesisIntro';
 import '../styles/global.css';
 
 interface Props {
 	title: string;
 	description: string;
 	image?: string;
+	/** Show the genesis loading intro (home only by default). */
+	showIntro?: boolean;
 }
 
-const { title, description, image = '/og-image.png' } = Astro.props;
+const { title, description, image = '/og-image.png', showIntro = false } = Astro.props;
 // Prefer Astro.site when set; otherwise force https on the request origin so
 // canonical/og URLs never ship as http:// on the public host.
 const siteOrigin = (() => {
@@ -42,14 +46,16 @@ const ogImage = new URL(image, siteOrigin).href;
 		<meta name="twitter:title" content={title} />
 		<meta name="twitter:description" content={description} />
 		<meta name="twitter:image" content={ogImage} />
+		<ViewTransitions />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
-			href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap"
+			href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
 			rel="stylesheet"
 		/>
 	</head>
 	<body>
+		{showIntro && <GenesisIntro client:only="react" />}
 		<div class="announcement-bar" data-announcement>
 			<p class="announcement-text" data-announcement-text>Free shipping on orders over $75</p>
 		</div>
@@ -98,6 +104,7 @@ const ogImage = new URL(image, siteOrigin).href;
 					if (document.visibilityState === 'visible') sweepReveal();
 				});
 				window.addEventListener('load', sweepReveal);
+				document.addEventListener('astro:page-load', sweepReveal);
 			}
 
 			// Announcement bar rotation — the first message is already in the
@@ -129,8 +136,9 @@ const ogImage = new URL(image, siteOrigin).href;
 
 <style>
 	.announcement-bar {
-		background: var(--ink);
-		color: var(--canvas);
+		background: linear-gradient(90deg, #1a0a14 0%, #12081c 50%, #0a0a16 100%);
+		color: var(--ink);
+		border-bottom: 1px solid var(--line);
 		text-align: center;
 		padding: 0.5rem 1rem;
 	}

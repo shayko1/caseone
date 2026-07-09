@@ -4,16 +4,70 @@ import CartBadge from './CartBadge';
 
 <header class="site-header">
 	<nav class="nav glass" aria-label="Primary">
-		<a href="/" class="nav-logo">Caseone</a>
-		<ul class="nav-links">
+		<a href="/" class="nav-logo">CASEONE</a>
+
+		<button
+			type="button"
+			class="nav-toggle"
+			aria-expanded="false"
+			aria-controls="primary-nav-links"
+			data-nav-toggle
+		>
+			<span class="nav-toggle-bars" aria-hidden="true">
+				<span></span>
+				<span></span>
+				<span></span>
+			</span>
+			<span class="nav-toggle-label">Menu</span>
+		</button>
+
+		<ul class="nav-links" id="primary-nav-links" data-nav-links>
 			<li><a href="/studio">Studio</a></li>
 			<li><a href="/gallery">Gallery</a></li>
 			<li><a href="/product">Shop</a></li>
 			<li><a href="/about">About</a></li>
 		</ul>
+
 		<div class="nav-actions">
-			<a href="/studio" class="btn-primary">Design Yours</a>
+			<a href="/studio" class="btn-primary nav-cta">Enter Studio</a>
 			<CartBadge client:only="react" />
 		</div>
 	</nav>
 </header>
+
+<script>
+	function setupNav() {
+		const toggle = document.querySelector('[data-nav-toggle]');
+		const links = document.querySelector('[data-nav-links]');
+		if (!(toggle instanceof HTMLButtonElement) || !(links instanceof HTMLElement)) return;
+
+		const setOpen = (open) => {
+			toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+			links.classList.toggle('is-open', open);
+			document.body.classList.toggle('nav-open', open);
+		};
+
+		toggle.onclick = () => {
+			setOpen(toggle.getAttribute('aria-expanded') !== 'true');
+		};
+
+		links.querySelectorAll('a').forEach((anchor) => {
+			anchor.addEventListener('click', () => setOpen(false));
+		});
+
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape') setOpen(false);
+		});
+
+		const mq = window.matchMedia('(min-width: 721px)');
+		const onMq = () => {
+			if (mq.matches) setOpen(false);
+		};
+		if (mq.addEventListener) mq.addEventListener('change', onMq);
+		else mq.addListener(onMq);
+		onMq();
+	}
+
+	setupNav();
+	document.addEventListener('astro:page-load', setupNav);
+</script>
