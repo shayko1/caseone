@@ -1,0 +1,210 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ContactForm from '../components/ContactForm.tsx';
+---
+
+<Layout
+	title="About — Caseone"
+	description="How Caseone designs a one-of-one iPhone case for every order, why we're honest about how the AI studio works today, and how to reach us for partnerships."
+>
+	<section class="hero reveal">
+		<p class="eyebrow">About</p>
+		<h1 class="display">Designed once. Made for you.</h1>
+		<p class="hero-sub">Caseone exists to make one thing well: a phone case nobody else has.</p>
+	</section>
+
+	<section class="story reveal">
+		<article class="story-item glass">
+			<p class="eyebrow">Why one-of-one</p>
+			<h2>No two cases are the same</h2>
+			<p>
+				Every case sold retires its design from the pool. We'd rather sell you something that's
+				actually yours than run the same print on a thousand phones. It costs us more to work this
+				way — no bulk runs, no restocking a bestseller — but it's the whole point of the product.
+			</p>
+		</article>
+
+		<article class="story-item glass">
+			<p class="eyebrow">How the studio works</p>
+			<h2>Honestly: it's a curated library, not live generation — yet</h2>
+			<p>
+				When you type a prompt in the Studio, we're matching you against a curated library of
+				AI-generated designs rather than generating a brand-new image on the spot. We think that's
+				worth saying plainly rather than implying something flashier. Real-time, prompt-to-design
+				generation is in development and will roll out as an upgrade to the same Studio flow — the
+				one-of-one guarantee doesn't change either way.
+			</p>
+		</article>
+
+		<article class="story-item glass">
+			<p class="eyebrow">Sustainability</p>
+			<h2>Made-to-order, not made-to-guess</h2>
+			<p>
+				We only produce a case after it's ordered, so there's no unsold inventory to write off or
+				discard. The shell itself is recycled polycarbonate reinforced with an aramid-fiber weave —
+				durable enough that it doesn't need replacing every year, which is the most sustainable
+				thing a phone case can do.
+			</p>
+		</article>
+	</section>
+
+	<section id="partners" class="partners reveal">
+		<div class="partners-inner glass">
+			<p class="eyebrow">Partnerships</p>
+			<h2 class="display partners-title">Let's build something together</h2>
+			<p class="partners-sub">
+				Wholesale, enterprise gifting, or a collaboration idea — tell us about it and we'll follow
+				up.
+			</p>
+			<ContactForm client:load />
+		</div>
+	</section>
+</Layout>
+
+<style>
+	.hero {
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: clamp(2rem, 6vw, 4rem) clamp(1rem, 4vw, 2.5rem) clamp(1rem, 3vw, 2rem);
+		text-align: center;
+	}
+
+	.hero-sub {
+		margin-top: 1rem;
+		font-size: 1.1rem;
+		opacity: 0.75;
+	}
+
+	.story {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 1.5rem;
+		max-width: 88rem;
+		margin: 0 auto;
+		padding: clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.story-item {
+		padding: clamp(1.5rem, 3vw, 2rem);
+	}
+
+	.story-item h2 {
+		margin-top: 0.5rem;
+		font-size: clamp(1.2rem, 2vw, 1.4rem);
+	}
+
+	.story-item p {
+		margin-top: 0.75rem;
+		opacity: 0.8;
+		line-height: 1.6;
+	}
+
+	.partners {
+		max-width: 48rem;
+		margin: 0 auto;
+		padding: clamp(2rem, 6vw, 4rem) clamp(1rem, 4vw, 2.5rem) clamp(3rem, 6vw, 5rem);
+	}
+
+	.partners-inner {
+		padding: clamp(1.75rem, 4vw, 2.75rem);
+	}
+
+	.partners-title {
+		font-size: clamp(1.8rem, 4vw, 2.5rem);
+		margin-top: 0.5rem;
+	}
+
+	.partners-sub {
+		margin-top: 0.75rem;
+		margin-bottom: 1.75rem;
+		opacity: 0.8;
+	}
+
+	@media (max-width: 800px) {
+		.story {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
+
+<style is:global>
+	/* Form styles must be global — the ContactForm React island's DOM doesn't
+	   carry Astro's data-astro-cid-* scoping attributes, so scoped <style>
+	   above would never match it. See CONTACT_FORM.md's style-migration note. */
+	.form-container {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+
+	.form-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.form-label {
+		font-size: 0.85rem;
+		font-weight: 500;
+		opacity: 0.85;
+	}
+
+	.form-label .required {
+		color: var(--coral-cta);
+	}
+
+	.form-input,
+	.form-textarea {
+		width: 100%;
+		padding: 0.75rem 1rem;
+		border-radius: 12px;
+		border: 1px solid rgba(23, 21, 31, 0.18);
+		background: rgba(255, 255, 255, 0.7);
+		font-family: var(--font-body);
+		font-size: 0.95rem;
+		color: var(--ink);
+	}
+
+	.form-textarea {
+		resize: vertical;
+		min-height: 6rem;
+	}
+
+	.form-input:focus-visible,
+	.form-textarea:focus-visible {
+		outline: 2px solid var(--coral);
+		outline-offset: 2px;
+	}
+
+	.form-input-error {
+		border-color: var(--coral-cta);
+	}
+
+	.form-field-error {
+		font-size: 0.8rem;
+		color: var(--coral-cta);
+	}
+
+	.form-button {
+		align-self: flex-start;
+		margin-top: 0.5rem;
+	}
+
+	.form-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.form-error {
+		font-size: 0.85rem;
+		color: var(--coral-cta);
+	}
+
+	.form-success {
+		padding: 2rem;
+		text-align: center;
+		font-family: var(--font-display);
+		font-size: 1.2rem;
+	}
+</style>

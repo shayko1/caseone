@@ -1,0 +1,380 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { products } from '@wix/stores';
+import { getDesigns } from '../lib/wix';
+import { PRODUCT_ID, FINISHES, UI_MODEL_LABELS } from '../lib/constants';
+
+// Static pricing per the seeded variants (scripts/seed-store.sh) — the
+// pricing table always shows these, independent of whether the live fetch
+// below succeeds. Only the hero name/description/images are "live".
+const PRICE_BY_FINISH: Record<string, string> = {
+	Matte: '$59',
+	Glossy: '$59',
+	Leather: '$79',
+};
+
+const FALLBACK_NAME = 'Caseone — One-of-One iPhone Case';
+const FALLBACK_DESCRIPTION =
+	"Every Caseone starts as an AI-composed design, printed once, and shipped to you. Nobody else will ever have this exact case.";
+
+// `product.description` from Wix Stores is rich HTML, not plain text — Astro's
+// `{}` expression escapes it (would show literal "<p>" in the browser), so
+// strip tags down to plain text before using it as a paragraph of copy.
+function stripHtml(html: string): string {
+	return html
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+let productName = FALLBACK_NAME;
+let productDescription = FALLBACK_DESCRIPTION;
+let heroImages: string[] = [];
+
+// Managed-Astro auto-authenticates `@wix/stores` — no createClient/OAuthStrategy.
+// Wrapped in try/catch so a failed live fetch can't crash the page; the static
+// fallback content above renders instead.
+try {
+	const { product } = await products.getProduct(PRODUCT_ID);
+	if (product) {
+		productName = product.name || FALLBACK_NAME;
+		productDescription = product.description ? stripHtml(product.description) : FALLBACK_DESCRIPTION;
+		heroImages = (product.media?.items ?? [])
+			.map((item: any) => item.image?.url)
+			.filter((url: unknown): url is string => typeof url === 'string' && url.length > 0);
+	}
+} catch (err) {
+	console.error('[product] products.getProduct failed, using static fallback:', err);
+}
+
+// No live product media (fetch failed, or product has no images yet) — fall
+// back to a couple of design library images so the hero isn't empty.
+if (heroImages.length === 0) {
+	try {
+		const designs = await getDesigns();
+		heroImages = designs
+			.slice(0, 3)
+			.map((design) => design.image)
+			.filter((url): url is string => Boolean(url));
+	} catch (err) {
+		console.error('[product] getDesigns fallback failed:', err);
+	}
+}
+
+const modelNames = Object.values(UI_MODEL_LABELS);
+
+const faqs = [
+	{
+		q: 'How long does it take to receive my case?',
+		a: "Every case is made-to-order — we don't print until your design is finalized. Production + shipping takes 5–7 days from checkout.",
+	},
+	{
+		q: 'Which iPhone models are supported?',
+		a: `Caseone ships for ${modelNames.join(', ')}. Pick your model in the Studio before you check out.`,
+	},
+	{
+		q: 'Is my design really one-of-one?',
+		a: "Yes. Once a design is used on a printed case, it's retired from the pool — no two customers get the same case.",
+	},
+	{
+		q: 'Can I get the same design again if my case breaks?',
+		a: 'Reach out through the inquiry form on our About page and we can discuss a reprint — it will still be exclusive to you.',
+	},
+	{
+		q: "What's the return policy on a custom case?",
+		a: "Because each case is made-to-order for your design, we can't accept returns for buyer's remorse — but defective cases are always replaced free of charge.",
+	},
+];
+---
+
+<Layout
+	title="Shop — Caseone Custom iPhone Cases"
+	description="One AI-designed case, printed once, made for your iPhone. Recycled polycarbonate shell, MagSafe-ready, made-to-order in 5–7 days."
+>
+	<section class="hero reveal">
+		<div class="hero-copy">
+			<p class="eyebrow">The Case</p>
+			<h1 class="display">{productName}</h1>
+			<p class="hero-description">{productDescription}</p>
+			<p class="hero-price">From {PRICE_BY_FINISH.Matte}</p>
+			<div class="hero-actions">
+				<a href="/studio" class="btn-primary">Design Yours</a>
+				<a href="#pricing" class="btn-ghost">See Pricing</a>
+			</div>
+		</div>
+		<div class="hero-gallery">
+			{heroImages.length > 0 ? (
+				heroImages.slice(0, 3).map((src, i) => (
+					<img
+						src={src}
+						alt={`Caseone custom iPhone case, view ${i + 1}`}
+						class="hero-gallery-image"
+						loading={i === 0 ? 'eager' : 'lazy'}
+					/>
+				))
+			) : (
+				<div class="hero-gallery-placeholder glass" role="img" aria-label="Case preview unavailable">
+					<span class="eyebrow">Preview unavailable</span>
+				</div>
+			)}
+		</div>
+	</section>
+
+	<section class="feature-grid reveal">
+		<div class="feature-card glass">
+			<p class="eyebrow">Materials</p>
+			<h2>Built to last, built to matter</h2>
+			<ul class="feature-list">
+				<li><strong>Recycled polycarbonate shell</strong> — impact-resistant, made from post-consumer plastic.</li>
+				<li><strong>Aramid-fiber weave layer</strong> — the same fiber family used in ballistic protection, reinforcing the shell against cracks.</li>
+				<li><strong>Microfiber inner lining</strong> — cushions your phone and keeps the fit snug without scratching the finish.</li>
+			</ul>
+		</div>
+
+		<div class="feature-card glass">
+			<p class="eyebrow">Protection</p>
+			<h2>Drop it. It'll be fine.</h2>
+			<p>Every case is tested to survive a 2.5-meter (8&nbsp;ft) drop onto concrete. Raised bezels around the screen and camera module take the impact first, so your phone doesn't have to.</p>
+		</div>
+
+		<div class="feature-card glass">
+			<p class="eyebrow">MagSafe</p>
+			<h2>Full magnet array</h2>
+			<p>A complete ring of magnets at 1,200 gauss holding strength — strong enough for MagSafe chargers, wallets, and car mounts to snap on and stay put, at full wireless-charging speed.</p>
+		</div>
+
+		<div class="feature-card glass">
+			<p class="eyebrow">Shipping</p>
+			<h2>Made when you order it</h2>
+			<p>Nothing is printed in advance — your case goes into production the moment you check out, and ships in 5–7 days. Orders over $75 ship free.</p>
+		</div>
+	</section>
+
+	<section id="pricing" class="pricing reveal">
+		<p class="eyebrow">Pricing</p>
+		<h2 class="display pricing-title">Pick your finish</h2>
+		<table class="pricing-table glass">
+			<thead>
+				<tr>
+					<th scope="col">Finish</th>
+					<th scope="col">Price</th>
+					<th scope="col">Notes</th>
+				</tr>
+			</thead>
+			<tbody>
+				{FINISHES.map((finish) => (
+					<tr>
+						<td>{finish}</td>
+						<td>{PRICE_BY_FINISH[finish] ?? '$59'}</td>
+						<td>
+							{finish === 'Leather'
+								? 'Genuine leather back, ages with a natural patina.'
+								: finish === 'Glossy'
+									? 'High-shine finish that shows off vivid designs.'
+									: 'Soft-touch finish, fingerprint-resistant.'}
+						</td>
+					</tr>
+				))}
+			</tbody>
+		</table>
+	</section>
+
+	<section class="faq reveal">
+		<p class="eyebrow">FAQ</p>
+		<h2 class="display faq-title">Questions, answered</h2>
+		<div class="faq-list">
+			{faqs.map((item) => (
+				<details class="faq-item glass">
+					<summary>{item.q}</summary>
+					<p>{item.a}</p>
+				</details>
+			))}
+		</div>
+	</section>
+
+	<section class="cta reveal">
+		<div class="cta-inner glass">
+			<h2 class="display cta-title">Design your one-of-one</h2>
+			<p>Start in the Studio — describe a look, pick a style, and we'll compose a design nobody else will ever have.</p>
+			<a href="/studio" class="btn-primary">Design Yours</a>
+		</div>
+	</section>
+</Layout>
+
+<style>
+	.hero {
+		display: grid;
+		grid-template-columns: 1.1fr 1fr;
+		gap: clamp(2rem, 5vw, 4rem);
+		align-items: center;
+		padding: clamp(2rem, 6vw, 4rem) clamp(1rem, 4vw, 2.5rem);
+		max-width: 88rem;
+		margin: 0 auto;
+	}
+
+	.hero-description {
+		margin-top: 1.25rem;
+		font-size: 1.05rem;
+		opacity: 0.8;
+		max-width: 34rem;
+	}
+
+	.hero-price {
+		margin-top: 1.5rem;
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+	}
+
+	.hero-actions {
+		display: flex;
+		gap: 1rem;
+		margin-top: 1.75rem;
+		flex-wrap: wrap;
+	}
+
+	.hero-gallery {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.75rem;
+	}
+
+	.hero-gallery-image {
+		width: 100%;
+		aspect-ratio: 3 / 4;
+		object-fit: cover;
+		border-radius: var(--radius);
+	}
+
+	.hero-gallery-image:first-child {
+		grid-column: 1 / -1;
+		aspect-ratio: 16 / 10;
+	}
+
+	.hero-gallery-placeholder {
+		grid-column: 1 / -1;
+		aspect-ratio: 16 / 10;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.feature-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 1.5rem;
+		max-width: 88rem;
+		margin: 0 auto;
+		padding: clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.feature-card {
+		padding: clamp(1.5rem, 3vw, 2rem);
+	}
+
+	.feature-card h2 {
+		margin-top: 0.5rem;
+		font-size: clamp(1.3rem, 2vw, 1.6rem);
+	}
+
+	.feature-card p {
+		margin-top: 0.75rem;
+		opacity: 0.8;
+		line-height: 1.6;
+	}
+
+	.feature-list {
+		margin-top: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.feature-list li {
+		opacity: 0.85;
+		line-height: 1.55;
+	}
+
+	.pricing,
+	.faq,
+	.cta {
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: clamp(2rem, 5vw, 3.5rem) clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.pricing-title,
+	.faq-title {
+		font-size: clamp(2rem, 5vw, 3rem);
+		margin-top: 0.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.pricing-table {
+		width: 100%;
+		border-collapse: collapse;
+		overflow: hidden;
+	}
+
+	.pricing-table th,
+	.pricing-table td {
+		text-align: left;
+		padding: 1rem 1.25rem;
+		border-bottom: 1px solid rgba(23, 21, 31, 0.08);
+	}
+
+	.pricing-table th {
+		font-family: var(--font-display);
+		font-weight: 700;
+		text-transform: uppercase;
+		font-size: 0.8rem;
+		letter-spacing: 0.06em;
+	}
+
+	.pricing-table tr:last-child td {
+		border-bottom: none;
+	}
+
+	.faq-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.faq-item {
+		padding: 1rem 1.25rem;
+	}
+
+	.faq-item summary {
+		cursor: pointer;
+		font-weight: 600;
+		font-family: var(--font-display);
+	}
+
+	.faq-item p {
+		margin-top: 0.75rem;
+		opacity: 0.8;
+		line-height: 1.6;
+	}
+
+	.cta-inner {
+		text-align: center;
+		padding: clamp(2.5rem, 6vw, 4rem) clamp(1.5rem, 5vw, 3rem);
+	}
+
+	.cta-title {
+		font-size: clamp(2rem, 5vw, 3rem);
+	}
+
+	.cta-inner p {
+		margin: 1rem auto 1.75rem;
+		max-width: 32rem;
+		opacity: 0.8;
+	}
+
+	@media (max-width: 800px) {
+		.hero,
+		.feature-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
