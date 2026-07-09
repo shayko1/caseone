@@ -1,0 +1,19 @@
+---
+import CartBadge from './CartBadge';
+---
+
+<header class="site-header">
+	<nav class="nav glass" aria-label="Primary">
+		<a href="/" class="nav-logo">Caseone</a>
+		<ul class="nav-links">
+			<li><a href="/studio">Studio</a></li>
+			<li><a href="/gallery">Gallery</a></li>
+			<li><a href="/product">Shop</a></li>
+			<li><a href="/about">About</a></li>
+		</ul>
+		<div class="nav-actions">
+			<a href="/studio" class="btn-primary">Design Yours</a>
+			<CartBadge client:only="react" />
+		</div>
+	</nav>
+</header>
