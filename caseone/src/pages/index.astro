@@ -1,8 +1,178 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
+import Layout from "../layouts/Layout.astro";
+import HeroCasePreview from "../components/HeroCasePreview";
+import StylesWall from "../components/StylesWall";
+import { getDesigns, getStyles } from "../lib/wix";
+import type { Design, Style } from "../lib/wix";
+
+// getDesigns/getStyles already try/catch internally and resolve to [] on
+// failure, but every SSR call site wraps defensively too, per project
+// convention — a throw here can't crash the page mid-render.
+let allDesigns: Design[] = [];
+try {
+  allDesigns = await getDesigns();
+} catch (err) {
+  console.error("[index] getDesigns failed:", err);
+  allDesigns = [];
+}
+
+let styles: Style[] = [];
+try {
+  styles = await getStyles();
+} catch (err) {
+  console.error("[index] getStyles failed:", err);
+  styles = [];
+}
+
+// Pick up to 5 visually strong designs for the hero rotation, one per style
+// (in styles order) so the cycle shows variety rather than 5 near-duplicates
+// from the same style. Falls back to filling from the full pool if there
+// aren't 5 distinct styles represented.
+function pickHeroDesigns(designs: Design[], stylesList: Style[], count: number): Design[] {
+  if (designs.length === 0) return [];
+
+  const firstByStyle = new Map<string, Design>();
+  for (const design of designs) {
+    if (!firstByStyle.has(design.styleSlug)) {
+      firstByStyle.set(design.styleSlug, design);
+    }
+  }
+
+  const orderedSlugs =
+    stylesList.length > 0 ? stylesList.map((style) => style.slug) : Array.from(firstByStyle.keys());
+
+  const picks: Design[] = [];
+  for (const slug of orderedSlugs) {
+    const design = firstByStyle.get(slug);
+    if (design) picks.push(design);
+    if (picks.length === count) break;
+  }
+
+  if (picks.length < count) {
+    for (const design of designs) {
+      if (picks.length === count) break;
+      if (!picks.includes(design)) picks.push(design);
+    }
+  }
+
+  return picks;
+}
+
+const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
+  .map((design) => design.image)
+  .filter(Boolean);
 ---
 
-<Layout>
-	<Welcome />
+<Layout
+	title="Caseone — AI-Designed Custom iPhone Cases"
+	description="Design a one-of-one iPhone case with AI. Describe it, preview it in 3D, and hold the only one in the world that looks like you."
+>
+	<section class="hero reveal" aria-label="Introduction">
+		<div class="hero-rings" aria-hidden="true">
+			<span class="hero-ring hero-ring--1"></span>
+			<span class="hero-ring hero-ring--2"></span>
+			<span class="hero-ring hero-ring--3"></span>
+		</div>
+		<div class="hero-grid">
+			<div class="hero-copy">
+				<p class="eyebrow">AI-designed. One of one.</p>
+				<h1 class="display hero-tagline">
+					<span>Design the only</span>
+					<span>iPhone case</span>
+					<span>in the world</span>
+					<span>that looks</span>
+					<span class="hero-tagline-accent">exactly like you</span>
+				</h1>
+				<p class="hero-sub">
+					Every case starts with a prompt. Our AI turns it into a design rendered live on your
+					exact iPhone model — no templates, no duplicates, ever.
+				</p>
+				<div class="hero-actions">
+					<a href="/studio" class="btn-primary">Design Yours</a>
+					<a href="/gallery" class="btn-ghost">See the Gallery</a>
+				</div>
+			</div>
+			<div class="hero-preview-frame">
+				<div class="hero-preview-placeholder" aria-hidden="true"></div>
+				{
+					heroDesignUrls.length > 0 && (
+						<HeroCasePreview
+							designUrls={heroDesignUrls}
+							client:only="react"
+							className="hero-preview-canvas"
+						/>
+					)
+				}
+			</div>
+		</div>
+	</section>
+
+	<section class="stats reveal" aria-label="Why Caseone">
+		<div class="stats-grid">
+			<div class="stat-block">
+				<span class="stat-index">01</span>
+				<p class="stat-copy">From idea to case in 60 seconds</p>
+			</div>
+			<div class="stat-block">
+				<span class="stat-index">02</span>
+				<p class="stat-copy">No templates. No duplicates. Your case is generated for you.</p>
+			</div>
+			<div class="stat-block">
+				<span class="stat-index">03</span>
+				<p class="stat-copy">Spin it before you buy it</p>
+			</div>
+		</div>
+	</section>
+
+	<section class="styles-wall-section reveal" aria-labelledby="styles-wall-heading">
+		<div class="section-head">
+			<p class="eyebrow">AI styles</p>
+			<h2 id="styles-wall-heading" class="display section-title">A style for every mood</h2>
+			<p class="hero-sub">
+				From cyberpunk to marble, minimal luxury to Y2K — start from a look, then make it
+				yours.
+			</p>
+		</div>
+		{
+			allDesigns.length > 0 ? (
+				<StylesWall designs={allDesigns} client:only="react" />
+			) : (
+				<div class="styles-wall-empty glass">
+					<p>New styles are on the way — check back soon.</p>
+				</div>
+			)
+		}
+	</section>
+
+	<section class="segments reveal" aria-label="Who Caseone is for">
+		<div class="segments-grid">
+			<article class="segment-card segment-card--creators">
+				<p class="eyebrow">For creators</p>
+				<h3>Turn your look into a case</h3>
+				<p>
+					No two people design the same case twice. Pick a vibe, describe it, and watch AI turn
+					it into something only you own.
+				</p>
+				<a href="/studio" class="btn-ghost">Start designing</a>
+			</article>
+			<article class="segment-card segment-card--enterprises">
+				<p class="eyebrow">For enterprises</p>
+				<h3>Branded cases, at scale</h3>
+				<p>
+					Fit out your team, your event, or your retail line with cases that carry your brand —
+					not a template.
+				</p>
+				<a href="/about#partners" class="btn-ghost">Talk to us</a>
+			</article>
+			<article class="segment-card segment-card--developers">
+				<p class="eyebrow">For developers</p>
+				<h3>Build on the same engine</h3>
+				<p>
+					The same generation engine that powers Caseone can power your product. Let's talk
+					integration.
+				</p>
+				<a href="/about#partners" class="btn-ghost">Get in touch</a>
+			</article>
+		</div>
+	</section>
 </Layout>
