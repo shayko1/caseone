@@ -1,0 +1,14 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Cart from "../components/Cart.tsx";
+---
+
+<Layout title="Your Cart" description="Review your custom phone cases before checkout.">
+	<main class="cart-page">
+		<div class="cart-page-inner">
+			<p class="eyebrow">Cart</p>
+			<h1 class="cart-page-title">Your Cart</h1>
+			<Cart client:only="react" />
+		</div>
+	</main>
+</Layout>
