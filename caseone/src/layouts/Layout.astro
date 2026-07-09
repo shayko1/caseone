@@ -11,9 +11,11 @@ interface Props {
 	image?: string;
 	/** Show the genesis loading intro (home only by default). */
 	showIntro?: boolean;
+	/** Design image revealed on the intro case back. */
+	introDesignUrl?: string;
 }
 
-const { title, description, image = '/og-image.png', showIntro = false } = Astro.props;
+const { title, description, image = '/og-image.png', showIntro = false, introDesignUrl } = Astro.props;
 // Prefer Astro.site when set; otherwise force https on the request origin so
 // canonical/og URLs never ship as http:// on the public host.
 const siteOrigin = (() => {
@@ -55,7 +57,7 @@ const ogImage = new URL(image, siteOrigin).href;
 		/>
 	</head>
 	<body>
-		{showIntro && <GenesisIntro client:only="react" />}
+		{showIntro && <GenesisIntro designUrl={introDesignUrl} client:only="react" />}
 		<div class="announcement-bar" data-announcement>
 			<p class="announcement-text" data-announcement-text>Free shipping on orders over $75</p>
 		</div>

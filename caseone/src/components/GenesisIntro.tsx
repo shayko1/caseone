@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type * as ThreeNS from "three";
+import { optimizeImage } from "../lib/image";
 
 const SESSION_KEY = "caseone-intro-seen";
 const BRAND = "CASEONE";
 const ACCENT = "#ff2d95";
 const PARTICLE = "#7c5cff";
+const STATUS_COLOR = "#a894ff";
 
 const STATUS_MESSAGES = [
   "Reading your idea...",
@@ -16,6 +18,8 @@ const STATUS_MESSAGES = [
 
 export interface GenesisIntroProps {
   onComplete?: () => void;
+  /** Real Caseone design revealed on the case back during the scan. */
+  designUrl?: string;
 }
 
 function hasWebGL(): boolean {
@@ -47,11 +51,11 @@ function markIntroSeen() {
 }
 
 /**
- * Full-viewport CASEONE genesis intro — particles coalesce into a phone case,
- * then the brand reveals and the overlay exits into the site.
- * Plays once per browser session; skipped for reduced-motion / no WebGL.
+ * CASEONE genesis intro — faithful to the original particle→case sequence,
+ * with Neon Atelier colors and a few production fixes (session skip, particle
+ * fade-out, scaled timeline overlaps, no depth-write while transparent).
  */
-export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
+export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(() => !shouldSkipIntro());
   const [exiting, setExiting] = useState(false);
@@ -76,7 +80,7 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
       setVisible(false);
       document.documentElement.classList.remove("intro-active");
       onCompleteRef.current?.();
-    }, 700);
+    }, 650);
   });
 
   useEffect(() => {
@@ -96,7 +100,6 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
     let timeline: any = null;
     let renderer: ThreeNS.WebGLRenderer | null = null;
     let resizeObserver: ResizeObserver | null = null;
-    let hudRoot: HTMLDivElement | null = null;
     const finish = (immediate = false) => finishRef.current(immediate);
 
     (async () => {
@@ -105,19 +108,18 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
       if (disposed || !container) return;
 
       const isMobile = window.innerWidth <= 768;
-      const maxParticles = isMobile ? 100 : 180;
-      const particleCount = isMobile ? 70 : 130;
+      const maxParticles = isMobile ? 120 : 200;
+      const particleCount = isMobile ? 90 : 160;
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(
-        42,
+        45,
         Math.max(container.clientWidth, 1) / Math.max(container.clientHeight, 1),
         0.1,
         100
       );
-      // Slight 3/4 angle so the case reads as a phone, not a flat slab
-      camera.position.set(2.2, 0.35, 7.0);
-      camera.lookAt(0, 0, 0);
+      // Front-facing like the original genesis piece
+      camera.position.set(0, 0, 8);
 
       renderer = new THREE.WebGLRenderer({
         antialias: !isMobile,
@@ -128,67 +130,129 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
       renderer.setSize(container.clientWidth, container.clientHeight);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
+      renderer.toneMappingExposure = 1.2;
       renderer.domElement.style.display = "block";
       renderer.domElement.style.width = "100%";
       renderer.domElement.style.height = "100%";
       container.appendChild(renderer.domElement);
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-      const key = new THREE.DirectionalLight(0xffffff, 1.8);
-      key.position.set(3, 7, 8);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+      const key = new THREE.DirectionalLight(0xffffff, 1.5);
+      key.position.set(5, 10, 7);
       scene.add(key);
-      const fill = new THREE.DirectionalLight(0x9b87ff, 0.95);
-      fill.position.set(-5, 2, 4);
+      const fill = new THREE.DirectionalLight(0x7c5cff, 1.0);
+      fill.position.set(-5, -5, -5);
       scene.add(fill);
-      const rim = new THREE.DirectionalLight(0xff2d95, 0.85);
-      rim.position.set(-4, 3, -6);
-      scene.add(rim);
-      const accent = new THREE.PointLight(0xff2d95, 2.0, 16);
-      accent.position.set(1.5, 0.8, 3.5);
+      const accent = new THREE.PointLight(0xff2d95, 2, 10);
+      accent.position.set(0, 0, 2);
       scene.add(accent);
 
       const animState = {
         morphProgress: 0,
         plexusAlpha: 0,
-        particleAlpha: 0,
+        particleAlpha: 1,
         scanProgress: 0,
         logoAlpha: 0,
         statusAlpha: 0,
         ambientRingAlpha: 0,
         ambientRingScaleVal: 0.1,
-        caseYaw: -0.22,
+        caseYaw: 0,
+        designOpacity: 0,
       };
       let statusTextIndex = 0;
       let isIntroComplete = false;
+      let lastStatusIndex = -1;
 
-      // Brand / status live in the DOM — 3D sprites were clipping off-screen
-      // and fighting the phone silhouette for readability.
-      const hudRootEl = document.createElement("div");
-      hudRootEl.className = "genesis-intro-hud";
-      const brandEl = document.createElement("p");
-      brandEl.className = "genesis-intro-brand";
-      brandEl.textContent = BRAND;
-      const statusEl = document.createElement("p");
-      statusEl.className = "genesis-intro-status";
-      hudRootEl.append(brandEl, statusEl);
-      container.parentElement?.appendChild(hudRootEl);
-      hudRoot = hudRootEl;
+      const hudGroup = new THREE.Group();
+      hudGroup.position.set(0, 0, -3);
+      camera.add(hudGroup);
+      scene.add(camera);
 
-      function syncHud() {
-        brandEl.style.opacity = String(animState.logoAlpha);
-        statusEl.style.opacity = String(animState.statusAlpha);
-        const next = STATUS_MESSAGES[statusTextIndex] || "";
-        if (statusEl.textContent !== next) statusEl.textContent = next;
+      let logoSprite: ThreeNS.Sprite | null = null;
+      let statusSprite: ThreeNS.Sprite | null = null;
+
+      function createTextTexture(
+        text: string,
+        fontSize: number,
+        color: string,
+        letterSpacing = 0,
+        weight = 700
+      ) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d")!;
+        const scale = 2;
+        canvas.width = 1024 * scale;
+        canvas.height = 256 * scale;
+        ctx.scale(scale, scale);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.shadowColor = "rgba(7, 6, 12, 0.75)";
+        ctx.shadowBlur = 14;
+        ctx.font = `${weight} ${fontSize}px "Syne", "DM Sans", sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        if (letterSpacing > 0) {
+          (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing =
+            `${letterSpacing}px`;
+        }
+        ctx.fillText(text, 512, 128);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        return texture;
+      }
+
+      function ensureTypography() {
+        if (!logoSprite) {
+          const logoTex = createTextTexture(BRAND, 48, ACCENT, 12, 800);
+          const logoMat = new THREE.SpriteMaterial({
+            map: logoTex,
+            transparent: true,
+            opacity: 0,
+            depthTest: false,
+            depthWrite: false,
+          });
+          logoSprite = new THREE.Sprite(logoMat);
+          logoSprite.scale.set(3.2, 0.8, 1);
+          logoSprite.position.set(0, 0.45, 0);
+          hudGroup.add(logoSprite);
+        }
+
+        if (statusTextIndex !== lastStatusIndex || !statusSprite) {
+          lastStatusIndex = statusTextIndex;
+          if (statusSprite) {
+            statusSprite.material.map?.dispose();
+            statusSprite.material.dispose();
+            hudGroup.remove(statusSprite);
+          }
+          const statusTex = createTextTexture(
+            STATUS_MESSAGES[statusTextIndex] || "",
+            20,
+            STATUS_COLOR,
+            1,
+            500
+          );
+          const statusMat = new THREE.SpriteMaterial({
+            map: statusTex,
+            transparent: true,
+            opacity: animState.statusAlpha,
+            depthTest: false,
+            depthWrite: false,
+          });
+          statusSprite = new THREE.Sprite(statusMat);
+          statusSprite.scale.set(2.6, 0.6, 1);
+          statusSprite.position.set(0, -0.45, 0);
+          hudGroup.add(statusSprite);
+        }
       }
 
       const caseGroup = new THREE.Group();
       scene.add(caseGroup);
 
-      const caseWidth = 2.05;
-      const caseHeight = 4.2;
+      const caseWidth = 2.3;
+      const caseHeight = 4.7;
       const caseDepth = 0.28;
-      const caseRadius = 0.4;
+      const caseRadius = 0.45;
 
       function createRoundedRectPath(w: number, h: number, r: number) {
         const path = new THREE.Shape();
@@ -210,25 +274,23 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
         {
           depth: caseDepth,
           bevelEnabled: true,
-          bevelSegments: isMobile ? 3 : 6,
-          steps: 1,
-          bevelSize: 0.035,
-          bevelThickness: 0.035,
+          bevelSegments: isMobile ? 4 : 8,
+          steps: 2,
+          bevelSize: 0.04,
+          bevelThickness: 0.04,
         }
       );
       caseGeometry.center();
 
+      // Original-style coral/magenta shell (not a near-black slab)
       const caseMaterial = new THREE.ShaderMaterial({
         transparent: true,
-        // Critical: don't write depth while invisible/glass — otherwise the
-        // phone silhouette punches rectangular holes through the particle field.
         depthWrite: false,
         uniforms: {
           uColor: { value: new THREE.Color(ACCENT) },
           uScanProgress: { value: 0 },
           uScanIntensity: { value: 0 },
           uOpacity: { value: 0 },
-          uSolid: { value: 0 },
           uTime: { value: 0 },
         },
         vertexShader: `
@@ -251,54 +313,53 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
           uniform float uScanProgress;
           uniform float uScanIntensity;
           uniform float uOpacity;
-          uniform float uSolid;
           uniform float uTime;
           void main() {
             vec3 normal = normalize(vNormal);
             vec3 viewDir = normalize(vViewPosition);
-            vec3 lightDir = normalize(vec3(3.0, 5.0, 6.0));
+            vec3 lightDir = normalize(vec3(5.0, 5.0, 4.0));
             float diffuse = max(dot(normal, lightDir), 0.0);
             vec3 halfDir = normalize(lightDir + viewDir);
-            float spec = pow(max(dot(normal, halfDir), 0.0), 36.0) * 0.45;
-            float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 2.6);
+            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * 0.5;
+            float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
 
             float y = vPosition.y;
-            float scanY = mix(2.4, -2.4, uScanProgress);
+            float scanY = mix(2.5, -2.5, uScanProgress);
             float dist = abs(y - scanY);
-            float scanGlow = exp(-dist * dist * 18.0) * uScanIntensity;
+            float scanGlow = exp(-dist * dist * 15.0) * uScanIntensity;
 
-            // Readable dark shell (not near-black) with magenta rim
-            vec3 shell = vec3(0.14, 0.12, 0.18);
-            vec3 lit = shell * (0.45 + diffuse * 0.85) + vec3(1.0) * spec;
-            lit += uColor * fresnel * 0.7;
-            lit = mix(lit, uColor * 1.9, scanGlow);
+            // Dark shell with magenta rim — design artwork is the hero on the back
+            vec3 baseColor = mix(vec3(0.08, 0.07, 0.1), uColor, 0.22);
+            vec3 litColor = baseColor * (diffuse * 0.6 + 0.4) + vec3(1.0) * spec + uColor * fresnel * 0.45;
+            vec3 finalColor = mix(litColor, uColor * 2.0, scanGlow);
 
-            float glassAlpha = (fresnel * 0.7 + scanGlow * 0.95 + 0.1) * uOpacity;
-            float solidAlpha = uOpacity;
-            float alpha = mix(glassAlpha, solidAlpha, uSolid);
-
+            float alpha = uOpacity;
+            if (uOpacity < 1.0) {
+              alpha = (fresnel * 0.5 + scanGlow) * uOpacity;
+            }
             if (alpha < 0.01) discard;
-            gl_FragColor = vec4(lit, alpha);
+            gl_FragColor = vec4(finalColor, alpha);
           }
         `,
       });
-
       caseGroup.add(new THREE.Mesh(caseGeometry, caseMaterial));
 
       const innerMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x12121a,
-        roughness: 0.22,
-        metalness: 0.55,
+        color: 0x111115,
+        roughness: 0.1,
+        metalness: 0.9,
+        transmission: 0.6,
+        thickness: 0.5,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const innerMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(caseWidth - 0.12, caseHeight - 0.12, caseDepth - 0.08),
-        innerMaterial
+      caseGroup.add(
+        new THREE.Mesh(
+          new THREE.BoxGeometry(caseWidth - 0.08, caseHeight - 0.08, caseDepth - 0.04),
+          innerMaterial
+        )
       );
-      innerMesh.position.z = 0;
-      caseGroup.add(innerMesh);
 
       const screenMat = new THREE.ShaderMaterial({
         transparent: true,
@@ -319,22 +380,65 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
           uniform float uOpacity;
           uniform float uTime;
           void main() {
-            vec3 color1 = vec3(0.04, 0.03, 0.1);
-            vec3 color2 = vec3(0.16, 0.03, 0.1);
-            vec3 color = mix(color1, color2, vUv.y + sin(uTime * 0.5) * 0.08);
+            vec3 color1 = vec3(0.05, 0.04, 0.12);
+            vec3 color2 = vec3(0.15, 0.04, 0.1);
+            vec3 color = mix(color1, color2, vUv.y + sin(uTime * 0.5) * 0.1);
             float wave = sin(vUv.x * 3.0 - vUv.y * 3.0 + uTime * 0.8) * 0.5 + 0.5;
-            color += vec3(0.16, 0.04, 0.12) * wave * 0.3;
+            color += vec3(0.14, 0.06, 0.12) * wave * 0.3;
             gl_FragColor = vec4(color, uOpacity);
           }
         `,
       });
       const screenMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(caseWidth - 0.18, caseHeight - 0.18),
+        new THREE.PlaneGeometry(caseWidth - 0.08, caseHeight - 0.08),
         screenMat
       );
-      // Clear of the extruded shell to avoid z-fighting / jagged cutouts
-      screenMesh.position.set(0, 0, caseDepth / 2 + 0.03);
+      screenMesh.position.set(0, 0, caseDepth / 2 + 0.015);
       caseGroup.add(screenMesh);
+
+      // Designed case BACK — real gallery artwork. Unlit + no depth test so it
+      // always reads on top of the shell once revealed (avoids z-fight with the
+      // extruded back face).
+      const designMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const designMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(caseWidth - 0.1, caseHeight - 0.1),
+        designMat
+      );
+      designMesh.position.set(0, 0, -caseDepth / 2 - 0.02);
+      designMesh.rotation.y = Math.PI;
+      designMesh.renderOrder = 10;
+      caseGroup.add(designMesh);
+
+      let designReady = false;
+      if (designUrl) {
+        const loader = new THREE.TextureLoader();
+        loader.setCrossOrigin("anonymous");
+        loader.load(
+          optimizeImage(designUrl, 90),
+          (tex) => {
+            if (disposed) {
+              tex.dispose();
+              return;
+            }
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = Math.min(8, renderer!.capabilities.getMaxAnisotropy());
+            designMat.map = tex;
+            designMat.needsUpdate = true;
+            designReady = true;
+          },
+          undefined,
+          () => {
+            designReady = false;
+          }
+        );
+      }
 
       const islandMat = new THREE.MeshBasicMaterial({
         color: 0x000000,
@@ -343,88 +447,92 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
         depthWrite: false,
       });
       const islandMesh = new THREE.Mesh(
-        new THREE.ShapeGeometry(createRoundedRectPath(0.52, 0.15, 0.075)),
+        new THREE.ShapeGeometry(createRoundedRectPath(0.6, 0.18, 0.09)),
         islandMat
       );
-      islandMesh.position.set(0, caseHeight / 2 - 0.36, caseDepth / 2 + 0.032);
+      islandMesh.position.set(0, caseHeight / 2 - 0.4, caseDepth / 2 + 0.018);
       caseGroup.add(islandMesh);
 
       const buttonMat = new THREE.MeshPhysicalMaterial({
-        color: 0x1c1c24,
-        roughness: 0.25,
-        metalness: 0.75,
+        color: 0x222225,
+        roughness: 0.2,
+        metalness: 0.8,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const powerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.42, 0.06), buttonMat);
-      powerBtn.position.set(caseWidth / 2 + 0.012, 0.42, 0);
+      const powerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.08), buttonMat);
+      powerBtn.position.set(caseWidth / 2 + 0.01, 0.5, 0);
       caseGroup.add(powerBtn);
-      const volUp = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.2, 0.06), buttonMat);
-      volUp.position.set(-caseWidth / 2 - 0.012, 0.72, 0);
+      const volUp = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.08), buttonMat);
+      volUp.position.set(-caseWidth / 2 - 0.01, 0.8, 0);
       caseGroup.add(volUp);
-      const volDown = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.2, 0.06), buttonMat);
-      volDown.position.set(-caseWidth / 2 - 0.012, 0.4, 0);
+      const volDown = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.08), buttonMat);
+      volDown.position.set(-caseWidth / 2 - 0.01, 0.4, 0);
       caseGroup.add(volDown);
 
       const bumpMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x1a1a22,
-        roughness: 0.25,
-        metalness: 0.8,
-        clearcoat: 0.6,
-        clearcoatRoughness: 0.2,
+        color: 0x18181c,
+        roughness: 0.15,
+        metalness: 0.9,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const bumpGeo = new THREE.ExtrudeGeometry(createRoundedRectPath(0.9, 0.9, 0.17), {
-        depth: 0.065,
+      const bumpGeo = new THREE.ExtrudeGeometry(createRoundedRectPath(1.0, 1.0, 0.2), {
+        depth: 0.08,
         bevelEnabled: true,
-        bevelSegments: 3,
+        bevelSegments: 4,
         steps: 1,
-        bevelSize: 0.012,
-        bevelThickness: 0.012,
+        bevelSize: 0.02,
+        bevelThickness: 0.02,
       });
       bumpGeo.center();
       const cameraBump = new THREE.Mesh(bumpGeo, bumpMaterial);
-      cameraBump.position.set(-0.38, 1.2, -caseDepth / 2 - 0.032);
+      cameraBump.position.set(-0.45, 1.35, -caseDepth / 2 - 0.04);
       cameraBump.rotation.y = Math.PI;
+      cameraBump.renderOrder = 12;
       caseGroup.add(cameraBump);
 
       const lensRingMat = new THREE.MeshPhysicalMaterial({
-        color: 0x2a2a32,
+        color: 0x2d2d32,
         metalness: 0.9,
-        roughness: 0.12,
+        roughness: 0.1,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
       const lensGlassMat = new THREE.MeshPhysicalMaterial({
-        color: 0x050508,
-        roughness: 0.05,
+        color: 0x050505,
+        roughness: 0,
+        transmission: 0.9,
+        thickness: 0.1,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
       const lensesGroup = new THREE.Group();
-      lensesGroup.position.set(-0.38, 1.2, -caseDepth / 2 - 0.065);
+      lensesGroup.position.set(-0.45, 1.35, -caseDepth / 2 - 0.08);
+      lensesGroup.renderOrder = 13;
       caseGroup.add(lensesGroup);
 
       function addLens(lx: number, ly: number) {
-        const ringGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 24);
+        const ringGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.08, 32);
         ringGeo.rotateX(Math.PI / 2);
         const ring = new THREE.Mesh(ringGeo, lensRingMat);
-        ring.position.set(lx, ly, -0.025);
+        ring.position.set(lx, ly, -0.04);
         lensesGroup.add(ring);
-        const glassGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.018, 24);
+        const glassGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.02, 32);
         glassGeo.rotateX(Math.PI / 2);
         const glass = new THREE.Mesh(glassGeo, lensGlassMat);
-        glass.position.set(lx, ly, -0.06);
+        glass.position.set(lx, ly, -0.08);
         lensesGroup.add(glass);
       }
-      addLens(-0.18, 0.18);
-      addLens(-0.18, -0.18);
-      addLens(0.18, 0);
+      addLens(-0.22, 0.22);
+      addLens(-0.22, -0.22);
+      addLens(0.22, 0);
 
       const ringMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(PARTICLE),
@@ -433,32 +541,23 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
-      const ambientRing = new THREE.Mesh(new THREE.TorusGeometry(2.75, 0.01, 8, 96), ringMat);
-      ambientRing.rotation.x = Math.PI / 2.4;
-      ambientRing.position.set(0, -0.1, -0.4);
+      const ambientRing = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.015, 8, 120), ringMat);
+      ambientRing.position.set(0, 0, -1);
       scene.add(ambientRing);
 
       function getRandomCasePoint() {
-        const face = Math.random();
-        if (face < 0.55) {
-          // Prefer front face so particles silhouette the phone
+        const r = Math.random();
+        if (r < 0.6) {
           return new THREE.Vector3(
-            (Math.random() - 0.5) * (caseWidth - 0.12),
-            (Math.random() - 0.5) * (caseHeight - 0.12),
-            caseDepth / 2 + 0.03
+            (Math.random() - 0.5) * (caseWidth - 0.1),
+            (Math.random() - 0.5) * (caseHeight - 0.1),
+            (Math.random() > 0.5 ? 1 : -1) * (caseDepth / 2 + 0.02)
           );
         }
-        if (face < 0.8) {
-          return new THREE.Vector3(
-            (Math.random() - 0.5) * (caseWidth - 0.12),
-            (Math.random() - 0.5) * (caseHeight - 0.12),
-            -(caseDepth / 2 + 0.03)
-          );
-        }
-        const side = Math.random() > 0.5 ? 1 : -1;
+        const theta = Math.random() * Math.PI * 2;
         return new THREE.Vector3(
-          side * (caseWidth / 2 + 0.02),
-          (Math.random() - 0.5) * (caseHeight - 0.2),
+          Math.cos(theta) * (caseWidth / 2),
+          Math.sin(theta) * (caseHeight / 2),
           (Math.random() - 0.5) * caseDepth
         );
       }
@@ -475,15 +574,15 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
 
       for (let i = 0; i < maxParticles; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const radius = 1.5 + Math.random() * 2.4;
+        const radius = 1.5 + Math.random() * 2.5;
         const randomPos = new THREE.Vector3(
-          (Math.random() - 0.5) * 11,
-          (Math.random() - 0.5) * 11,
-          (Math.random() - 0.5) * 11
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 10
         );
         const orbitPos = new THREE.Vector3(
           Math.cos(angle) * radius,
-          (Math.random() - 0.5) * 3.4,
+          (Math.random() - 0.5) * 4,
           Math.sin(angle) * radius
         );
         const casePos = getRandomCasePoint();
@@ -492,7 +591,7 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
           orbitPos,
           casePos,
           currentPos: randomPos.clone(),
-          speed: 0.25 + Math.random() * 0.75,
+          speed: 0.2 + Math.random() * 0.8,
           phase: Math.random() * Math.PI * 2,
         });
         particlePositions[i * 3] = randomPos.x;
@@ -502,28 +601,23 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
 
       const particleGeometry = new THREE.BufferGeometry();
       particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
-      particleGeometry.setAttribute(
-        "aAlpha",
-        new THREE.BufferAttribute(new Float32Array(maxParticles).fill(1), 1)
-      );
       const particleMaterial = new THREE.ShaderMaterial({
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         uniforms: {
           uColor: { value: new THREE.Color(PARTICLE) },
-          uSize: { value: isMobile ? 5.5 : 7 },
-          uGlobalAlpha: { value: 0 },
+          uSize: { value: isMobile ? 6.5 : 8 },
+          uGlobalAlpha: { value: 1 },
         },
         vertexShader: `
-          attribute float aAlpha;
-          varying float vAlpha;
           uniform float uSize;
           uniform float uGlobalAlpha;
+          varying float vAlpha;
           void main() {
-            vAlpha = aAlpha * uGlobalAlpha;
+            vAlpha = uGlobalAlpha;
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = uSize * (260.0 / -mvPosition.z);
+            gl_PointSize = uSize * (300.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
@@ -533,14 +627,14 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
           void main() {
             float dist = length(gl_PointCoord - vec2(0.5));
             if (dist > 0.5) discard;
-            float glow = exp(-dist * 4.2);
-            gl_FragColor = vec4(uColor, glow * vAlpha);
+            float glow = exp(-dist * 4.0);
+            gl_FragColor = vec4(uColor, glow * 0.8 * vAlpha);
           }
         `,
       });
       scene.add(new THREE.Points(particleGeometry, particleMaterial));
 
-      const maxLineVerts = Math.min(maxParticles * 8, 1400);
+      const maxLineVerts = Math.min(maxParticles * 10, 1600);
       const linePositions = new Float32Array(maxLineVerts * 3);
       const lineColors = new Float32Array(maxLineVerts * 3);
       const lineGeometry = new THREE.BufferGeometry();
@@ -557,90 +651,74 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
 
       const fadeMaterials = [innerMaterial, bumpMaterial, lensRingMat, lensGlassMat, buttonMat];
 
-      // Pace for a readable ~7.5s intro (then 0.8s hold + 0.7s exit)
-      const s = 0.72;
+      // Slightly faster than the original standalone piece (~6.5s + exit)
+      const s = 0.62;
       timeline = gsap.timeline({
         onComplete: () => {
           isIntroComplete = true;
           window.setTimeout(() => {
             if (!disposed) finish(false);
-          }, 800);
+          }, 700);
         },
       });
 
-      syncHud();
+      ensureTypography();
 
-      // Phase 1 — awaken particles into orbit
       timeline.to(animState, {
         morphProgress: 1,
-        plexusAlpha: 0.5,
-        particleAlpha: 1,
+        plexusAlpha: 0.55,
         duration: 1.5 * s,
         ease: "power2.inOut",
       });
-
-      // Phase 2 — coalesce onto case silhouette
       timeline.to(animState, {
         morphProgress: 2,
-        plexusAlpha: 0.22,
+        plexusAlpha: 0.2,
         duration: 1.35 * s,
         ease: "power3.inOut",
       });
-
-      // Glass shell fades in near end of coalesce (overlap scaled with s)
       timeline.to(
         caseMaterial.uniforms.uOpacity,
-        { value: 1, duration: 0.7 * s, ease: "power2.out" },
-        `-=${0.45 * s}`
+        { value: 1, duration: 0.9 * s, ease: "power2.out" },
+        `-=${0.85 * s}`
       );
-
-      // Phase 3 — scan + solidify phone
-      timeline.to(caseMaterial.uniforms.uScanIntensity, {
-        value: 1.35,
-        duration: 0.28 * s,
-      });
-      timeline.to(animState, {
-        scanProgress: 1,
-        duration: 1.25 * s,
-        ease: "power1.inOut",
-      });
+      timeline.to(caseMaterial.uniforms.uScanIntensity, { value: 1.5, duration: 0.3 * s });
+      timeline.to(animState, { scanProgress: 1, duration: 1.2 * s, ease: "power1.inOut" });
+      // Design paints during scan, fully on before the flip
       timeline.to(
-        caseMaterial.uniforms.uSolid,
-        { value: 1, duration: 1.0 * s, ease: "power2.inOut" },
-        `-=${1.1 * s}`
+        animState,
+        { designOpacity: 1, duration: 0.9 * s, ease: "power2.inOut" },
+        `-=${1.0 * s}`
       );
       timeline.to(
         fadeMaterials,
-        { opacity: 0.95, duration: 0.95 * s, ease: "power2.inOut" },
-        `-=${1.05 * s}`
+        { opacity: 0.85, duration: 1.0 * s, ease: "power2.inOut" },
+        `-=${1.0 * s}`
       );
       timeline.to(
         screenMat.uniforms.uOpacity,
-        { value: 1, duration: 0.95 * s },
-        `-=${0.95 * s}`
+        { value: 1, duration: 1.0 * s },
+        `-=${1.0 * s}`
       );
-      timeline.to(islandMat, { opacity: 1, duration: 0.7 * s }, `-=${0.8 * s}`);
-      timeline.to(caseMaterial.uniforms.uScanIntensity, {
-        value: 0.12,
-        duration: 0.45 * s,
-      });
+      timeline.to(islandMat, { opacity: 1, duration: 0.8 * s }, `-=${0.9 * s}`);
+      timeline.to(caseMaterial.uniforms.uScanIntensity, { value: 0.2, duration: 0.4 * s });
 
-      // Particles dissolve once the phone exists
+      // Soft dissolve of particles after the case is solid
       timeline.to(
         animState,
-        {
-          particleAlpha: 0,
-          plexusAlpha: 0,
-          duration: 0.9 * s,
-          ease: "power2.inOut",
-        },
-        `-=${0.35 * s}`
+        { particleAlpha: 0.08, plexusAlpha: 0.02, duration: 0.7 * s, ease: "power2.out" },
+        `-=${0.2 * s}`
       );
 
-      // Phase 4 — brand + status
+      // Flip to the designed back — camera bump + artwork = the product
+      timeline.to(animState, {
+        caseYaw: Math.PI * 0.98,
+        duration: 1.4 * s,
+        ease: "power2.inOut",
+      });
+
       timeline.to(animState, {
         logoAlpha: 1,
-        duration: 0.65 * s,
+        duration: 0.6 * s,
         ease: "power2.out",
       });
 
@@ -650,31 +728,27 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
           duration: 0.12 * s,
           onComplete: () => {
             statusTextIndex = index;
-            syncHud();
+            ensureTypography();
           },
         });
-        timeline!.to(animState, {
-          statusAlpha: 1,
-          duration: 0.22 * s,
-        });
-        // Hold long enough to read (~0.55–0.7s each)
-        timeline!.to({}, { duration: (index === STATUS_MESSAGES.length - 1 ? 0.85 : 0.55) * s });
+        timeline!.to(animState, { statusAlpha: 1, duration: 0.22 * s });
+        timeline!.to({}, { duration: (index === STATUS_MESSAGES.length - 1 ? 0.7 : 0.45) * s });
       });
 
       timeline.to(animState, {
         logoAlpha: 0,
         statusAlpha: 0,
-        duration: 0.5 * s,
+        particleAlpha: 0,
+        plexusAlpha: 0,
+        duration: 0.55 * s,
         ease: "power2.inOut",
       });
-
       timeline.to(
         animState,
         {
-          ambientRingAlpha: 0.2,
-          ambientRingScaleVal: 1.25,
-          caseYaw: 0.15,
-          duration: 0.85 * s,
+          ambientRingAlpha: 0.15,
+          ambientRingScaleVal: 1.4,
+          duration: 0.8 * s,
           ease: "power2.out",
         },
         `-=${0.35 * s}`
@@ -683,8 +757,7 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
       const startTime = performance.now();
       const tmp = new THREE.Vector3();
       const pColor = new THREE.Color(PARTICLE);
-      // Cap plexus work — O(n²) is expensive at 130 particles
-      const plexusStride = isMobile ? 3 : 2;
+      const plexusStride = isMobile ? 2 : 1;
 
       const animate = () => {
         if (disposed) return;
@@ -693,25 +766,27 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
 
         caseMaterial.uniforms.uScanProgress.value = animState.scanProgress;
         caseMaterial.uniforms.uTime.value = elapsed;
-        // Only write depth once the shell is mostly solid
-        const solid = caseMaterial.uniforms.uSolid.value as number;
-        caseMaterial.depthWrite = solid > 0.55;
-        for (const mat of fadeMaterials) {
-          mat.depthWrite = mat.opacity > 0.4;
-        }
+        caseMaterial.depthWrite = caseMaterial.uniforms.uOpacity.value > 0.85;
         screenMat.uniforms.uTime.value = elapsed;
+        designMat.opacity = designReady ? animState.designOpacity : 0;
+        // Keep camera bump / lenses above the art
+        bumpMaterial.depthTest = true;
+        lensRingMat.depthTest = true;
+        lensGlassMat.depthTest = true;
         particleMaterial.uniforms.uGlobalAlpha.value = animState.particleAlpha;
         ambientRing.scale.setScalar(animState.ambientRingScaleVal);
         ringMat.opacity = animState.ambientRingAlpha;
         ambientRing.rotation.z = elapsed * 0.05;
 
-        syncHud();
+        ensureTypography();
+        if (logoSprite) logoSprite.material.opacity = animState.logoAlpha;
+        if (statusSprite) statusSprite.material.opacity = animState.statusAlpha;
 
         const positions = particleGeometry.attributes.position.array as Float32Array;
         let lineIndex = 0;
         const linePosAttr = lineGeometry.attributes.position.array as Float32Array;
         const lineColAttr = lineGeometry.attributes.color.array as Float32Array;
-        const connRadius = isMobile ? 0.95 : 1.05;
+        const connRadius = 1.15;
         const showPlexus = animState.plexusAlpha > 0.02 && animState.particleAlpha > 0.05;
 
         for (let i = 0; i < maxParticles; i++) {
@@ -729,21 +804,20 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
             tmp.lerpVectors(p.orbitPos, p.casePos, animState.morphProgress - 1);
           } else {
             tmp.copy(p.casePos);
-            // Soft drift only while particles are still visible
-            const drift = 0.025 * animState.particleAlpha;
-            tmp.x += Math.sin(elapsed * p.speed + p.phase) * drift;
-            tmp.y += Math.cos(elapsed * p.speed * 0.8 + p.phase) * drift;
+            const floatIntensity = 0.03 * Math.max(animState.particleAlpha, 0.2);
+            tmp.x += Math.sin(elapsed * p.speed + p.phase) * floatIntensity;
+            tmp.y += Math.cos(elapsed * p.speed * 0.8 + p.phase) * floatIntensity;
           }
 
-          if (animState.morphProgress > 0.12 && animState.morphProgress < 1.75) {
-            const angle = elapsed * 0.4 * p.speed;
+          if (animState.morphProgress > 0.2 && animState.morphProgress < 1.8) {
+            const angle = elapsed * 0.45 * p.speed;
             const xRot = tmp.x * Math.cos(angle) - tmp.z * Math.sin(angle);
             const zRot = tmp.x * Math.sin(angle) + tmp.z * Math.cos(angle);
             tmp.x = xRot;
             tmp.z = zRot;
           }
 
-          p.currentPos.lerp(tmp, 0.14);
+          p.currentPos.lerp(tmp, 0.12);
           positions[i * 3] = p.currentPos.x;
           positions[i * 3 + 1] = p.currentPos.y;
           positions[i * 3 + 2] = p.currentPos.z;
@@ -751,7 +825,7 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
         particleGeometry.attributes.position.needsUpdate = true;
 
         if (showPlexus) {
-          lineMaterial.opacity = animState.plexusAlpha * animState.particleAlpha;
+          lineMaterial.opacity = animState.plexusAlpha * Math.min(1, animState.particleAlpha + 0.2);
           for (let i = 0; i < particleCount; i += plexusStride) {
             const pi = particlesData[i].currentPos;
             for (let j = i + plexusStride; j < particleCount; j += plexusStride) {
@@ -765,15 +839,12 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
                 linePosAttr[(lineIndex + 1) * 3 + 1] = pj.y;
                 linePosAttr[(lineIndex + 1) * 3 + 2] = pj.z;
                 const fade = 1 - dist / connRadius;
-                const cR = pColor.r * fade;
-                const cG = pColor.g * fade;
-                const cB = pColor.b * fade;
-                lineColAttr[lineIndex * 3] = cR;
-                lineColAttr[lineIndex * 3 + 1] = cG;
-                lineColAttr[lineIndex * 3 + 2] = cB;
-                lineColAttr[(lineIndex + 1) * 3] = cR;
-                lineColAttr[(lineIndex + 1) * 3 + 1] = cG;
-                lineColAttr[(lineIndex + 1) * 3 + 2] = cB;
+                lineColAttr[lineIndex * 3] = pColor.r * fade;
+                lineColAttr[lineIndex * 3 + 1] = pColor.g * fade;
+                lineColAttr[lineIndex * 3 + 2] = pColor.b * fade;
+                lineColAttr[(lineIndex + 1) * 3] = pColor.r * fade;
+                lineColAttr[(lineIndex + 1) * 3 + 1] = pColor.g * fade;
+                lineColAttr[(lineIndex + 1) * 3 + 2] = pColor.b * fade;
                 lineIndex += 2;
               }
             }
@@ -788,13 +859,13 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
         lineGeometry.attributes.position.needsUpdate = true;
         lineGeometry.attributes.color.needsUpdate = true;
 
-        // Gentle turn during intro; idle spin after
         if (isIntroComplete) {
-          caseGroup.rotation.y = animState.caseYaw + elapsed * 0.1;
-          caseGroup.rotation.x = Math.sin(elapsed * 0.22) * 0.06;
+          // Idle: gently rock the designed back toward the viewer
+          caseGroup.rotation.y = animState.caseYaw + Math.sin(elapsed * 0.4) * 0.15;
+          caseGroup.rotation.x = 0.1 + Math.sin(elapsed * 0.25) * 0.06;
         } else {
-          caseGroup.rotation.y = animState.caseYaw + elapsed * 0.04;
-          caseGroup.rotation.x = 0.08;
+          caseGroup.rotation.y = animState.caseYaw;
+          caseGroup.rotation.x = 0.1;
         }
 
         renderer!.render(scene, camera);
@@ -822,13 +893,12 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
       cancelAnimationFrame(rafId);
       timeline?.kill();
       resizeObserver?.disconnect();
-      hudRoot?.remove();
       if (renderer) {
         renderer.dispose();
         renderer.domElement.remove();
       }
     };
-  }, [visible]);
+  }, [visible, designUrl]);
 
   if (!visible) return null;
 
@@ -841,11 +911,7 @@ export default function GenesisIntro({ onComplete }: GenesisIntroProps) {
     >
       <div className="genesis-intro-bg" aria-hidden="true" />
       <div className="genesis-intro-canvas" ref={mountRef} />
-      <button
-        type="button"
-        className="genesis-intro-skip"
-        onClick={() => finishRef.current(false)}
-      >
+      <button type="button" className="genesis-intro-skip" onClick={() => finishRef.current(false)}>
         Skip
       </button>
     </div>

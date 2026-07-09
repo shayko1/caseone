@@ -89,6 +89,14 @@ export default function CasePreview({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [webglSupported, setWebglSupported] = useState<boolean | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  // Three.js (dynamically imported below) is a ~190KB-gzipped chunk on top of
+  // React itself — until it downloads, parses, and builds the scene, the
+  // container below has nothing in it. Rendering the lightweight static
+  // image as a placeholder for that gap (instead of a blank box) is what
+  // actually fixes the "3D preview takes forever to appear" complaint —
+  // the earlier image-CDN optimization only shrank the *texture* download,
+  // it didn't touch this JS-bundle-driven gap.
+  const [sceneReady, setSceneReady] = useState(false);
 
   // Mutable refs so prop-change effects can reach into the live scene
   // without tearing it down and rebuilding it.
@@ -948,6 +956,7 @@ export default function CasePreview({
         dispose,
       };
 
+      setSceneReady(true);
       cleanup = dispose;
     })();
 
@@ -989,27 +998,43 @@ export default function CasePreview({
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={containerClassName}
-      role="img"
-      aria-label={
-        interactive
-          ? `Interactive 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
-          : separateCaseOnHover
-            ? `3D preview of your phone case — hover to lift the case off the phone`
-            : `Rotating 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
-      }
-      tabIndex={0}
-      onFocus={() => setIsFocused(true)}
-      onBlur={() => setIsFocused(false)}
-      style={{
-        width: "100%",
-        height: "100%",
-        outline: "none",
-        touchAction: "none",
-        boxShadow: isFocused ? "0 0 0 3px rgba(255,45,149,0.85)" : "none",
-      }}
-    />
+    <div className={containerClassName} style={{ width: "100%", height: "100%" }}>
+      <div
+        ref={containerRef}
+        role="img"
+        aria-label={
+          interactive
+            ? `Interactive 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
+            : separateCaseOnHover
+              ? `3D preview of your phone case — hover to lift the case off the phone`
+              : `Rotating 3D preview of your phone case design, ${deviceColor} device color, ${lighting} lighting`
+        }
+        tabIndex={0}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        style={{
+          width: "100%",
+          height: "100%",
+          outline: "none",
+          touchAction: "none",
+          boxShadow: isFocused ? "0 0 0 3px rgba(255,45,149,0.85)" : "none",
+        }}
+      />
+      {/* Placeholder shown while the WebGL scene (and the three.js chunk it
+          needs) is still loading — swapped out for the live canvas the
+          instant the scene finishes building, so there's never a blank box. */}
+      {!sceneReady && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+          }}
+        >
+          <StaticFallback designUrl={designUrl} />
+        </div>
+      )}
+    </div>
   );
 }

@@ -1905,44 +1905,6 @@ html.intro-active body {
 	height: 100% !important;
 }
 
-.genesis-intro-hud {
-	position: absolute;
-	inset: 0;
-	z-index: 1;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: space-between;
-	pointer-events: none;
-	padding: clamp(4.5rem, 12vh, 7rem) 1.5rem;
-	text-align: center;
-}
-
-.genesis-intro-brand {
-	margin: 0;
-	font-family: var(--font-display);
-	font-weight: 800;
-	font-size: clamp(2.4rem, 7vw, 4.5rem);
-	letter-spacing: 0.14em;
-	color: var(--coral);
-	text-shadow: 0 0 40px rgba(255, 45, 149, 0.35);
-	opacity: 0;
-	will-change: opacity;
-}
-
-.genesis-intro-status {
-	margin: 0;
-	font-family: var(--font-body);
-	font-weight: 500;
-	font-size: clamp(0.95rem, 2.2vw, 1.15rem);
-	letter-spacing: 0.04em;
-	color: #c4b5ff;
-	text-shadow: 0 2px 24px rgba(7, 6, 12, 0.9);
-	min-height: 1.5em;
-	opacity: 0;
-	will-change: opacity;
-}
-
 .genesis-intro-skip {
 	position: absolute;
 	right: 1.25rem;
