@@ -928,12 +928,19 @@ main {
 	position: relative;
 	z-index: 2;
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+	grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr);
 	gap: clamp(1.5rem, 5vw, 4rem);
 	align-items: center;
 	max-width: 88rem;
 	margin: 0 auto;
 	width: 100%;
+}
+
+.hero-copy {
+	position: relative;
+	z-index: 3;
+	isolation: isolate;
+	min-width: 0;
 }
 
 @keyframes hero-text-slide-up {
@@ -1021,10 +1028,12 @@ main {
 
 .hero-preview-frame {
 	position: relative;
+	z-index: 1;
 	aspect-ratio: 3 / 4;
 	width: 100%;
-	max-width: 24rem;
-	margin: 0 auto;
+	max-width: 20rem;
+	margin: 0;
+	justify-self: end;
 	border-radius: 0;
 	overflow: visible;
 	background: transparent;
@@ -1101,8 +1110,10 @@ main {
 	}
 
 	.hero-preview-frame {
-		max-width: 17rem;
+		max-width: 15.5rem;
 		aspect-ratio: 3 / 3.7;
+		justify-self: center;
+		margin: 0 auto;
 	}
 
 	.hero-rings {

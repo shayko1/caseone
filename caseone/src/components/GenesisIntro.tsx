@@ -416,6 +416,31 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       designMesh.renderOrder = 10;
       caseGroup.add(designMesh);
 
+      // Soft rounded alpha so art follows the case silhouette (no square corners)
+      {
+        const mask = document.createElement("canvas");
+        mask.width = 512;
+        mask.height = 1024;
+        const ctx = mask.getContext("2d")!;
+        const r = 78;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(512 - r, 0);
+        ctx.quadraticCurveTo(512, 0, 512, r);
+        ctx.lineTo(512, 1024 - r);
+        ctx.quadraticCurveTo(512, 1024, 512 - r, 1024);
+        ctx.lineTo(r, 1024);
+        ctx.quadraticCurveTo(0, 1024, 0, 1024 - r);
+        ctx.lineTo(0, r);
+        ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.closePath();
+        ctx.fill();
+        const alphaMap = new THREE.CanvasTexture(mask);
+        designMat.alphaMap = alphaMap;
+        designMat.needsUpdate = true;
+      }
+
       let designReady = false;
       if (designUrl) {
         const loader = new THREE.TextureLoader();
