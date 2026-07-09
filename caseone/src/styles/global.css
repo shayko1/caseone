@@ -1935,31 +1935,34 @@ html.intro-active body {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: center;
 	pointer-events: none;
-	padding: clamp(2.5rem, 8vh, 4.5rem) 1.5rem clamp(5.5rem, 14vh, 8rem);
 }
 
 .genesis-intro-logo {
+	position: absolute;
+	top: 22%;
 	margin: 0;
 	font-family: var(--font-display);
 	font-weight: 800;
-	font-size: clamp(1.35rem, 4vw, 2rem);
-	letter-spacing: 0.42em;
+	font-size: clamp(2.5rem, 8vw, 4.5rem);
+	letter-spacing: 0.15em;
 	text-transform: uppercase;
 	color: var(--coral);
 	text-shadow: 0 0 24px rgba(255, 45, 149, 0.35);
 }
 
 .genesis-intro-status {
+	position: absolute;
+	bottom: 22%;
 	margin: 0;
-	font-family: var(--font-body);
-	font-weight: 500;
-	font-size: clamp(0.9rem, 2.2vw, 1.05rem);
-	letter-spacing: 0.04em;
-	color: #a894ff;
+	font-family: var(--font-display);
+	font-weight: 700;
+	font-size: clamp(1.2rem, 3vw, 1.8rem);
+	letter-spacing: 0.05em;
+	color: #ffffff;
 	text-align: center;
-	max-width: 22rem;
+	max-width: 90vw;
 }
 
 .genesis-intro-skip {
