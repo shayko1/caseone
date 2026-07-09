@@ -57,8 +57,10 @@ function StaticFallback({
 }
 
 const MIN_DISTANCE = 2.2;
-const MAX_DISTANCE = 5.5;
+const MAX_DISTANCE = 6.5;
 const DEFAULT_DISTANCE = 3.4;
+/** Extra zoom-out for the hero so the full phone + hover lift stay in frame. */
+const HERO_DISTANCE = 4.6;
 const AUTO_ROTATE_SPEED = 0.25; // radians / second
 const DRAG_DAMPING = 0.08; // lerp factor per frame toward target rotation
 const IDLE_TIMEOUT_MS = 1500;
@@ -106,7 +108,7 @@ export default function CasePreview({
     camera: ThreeNS.PerspectiveCamera;
     textureLoader: ThreeNS.TextureLoader;
     designTexture: ThreeNS.Texture | null;
-    designMaterial: ThreeNS.MeshStandardMaterial;
+    designMaterial: ThreeNS.MeshStandardMaterial | ThreeNS.MeshPhysicalMaterial;
     deviceColorMaterials: ThreeNS.MeshStandardMaterial[];
     lights: Record<LightingPreset, ThreeNS.Light[]>;
     setLighting: (preset: LightingPreset) => void;
@@ -149,7 +151,7 @@ export default function CasePreview({
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      renderer.toneMappingExposure = 1.15;
       container.appendChild(renderer.domElement);
       renderer.domElement.style.background = "transparent";
       renderer.domElement.style.display = "block";
@@ -157,8 +159,22 @@ export default function CasePreview({
       const scene = new THREE.Scene();
       scene.background = null;
 
+      // Soft studio environment so metal rims / glass catch real reflections.
+      try {
+        const { RoomEnvironment } = await import(
+          "three/examples/jsm/environments/RoomEnvironment.js"
+        );
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        pmrem.dispose();
+      } catch {
+        // Environment is a visual upgrade only — scene still works without it.
+      }
+
       const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-      let cameraDistance = DEFAULT_DISTANCE;
+      // Hero needs more breathing room: tall phone + camera bump + case lift.
+      let cameraDistance = separateCaseOnHover ? HERO_DISTANCE : DEFAULT_DISTANCE;
+      let fittedBaseDistance = cameraDistance;
       camera.position.set(0, 0, cameraDistance);
 
       // ---- phone body ----
@@ -171,8 +187,10 @@ export default function CasePreview({
       // silhouette and the Z edges independently.
       const PHONE_WIDTH = 1;
       const PHONE_HEIGHT = 2.05;
-      const PHONE_DEPTH = 0.045;
-      const BODY_RADIUS = PHONE_WIDTH * 0.075;
+      // Slightly thicker so the titanium rail / case wrap reads as a real frame.
+      const PHONE_DEPTH = 0.062;
+      // Stronger corner radius — closer to a real iPhone silhouette.
+      const BODY_RADIUS = PHONE_WIDTH * 0.12;
 
       const phoneGroup = new THREE.Group();
       scene.add(phoneGroup);
@@ -257,17 +275,19 @@ export default function CasePreview({
       // peeks through the case's camera cutout. The side rail (index 1)
       // is a satin titanium band around the flat edges.
       const bodyCapMaterial = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(deviceColor || "#8e8e93"),
-        roughness: 0.55,
-        metalness: 0.35,
+        color: new THREE.Color(deviceColor || "#2c2c2e"),
+        roughness: 0.42,
+        metalness: 0.45,
       });
+      // Satin titanium band — the visible iPhone frame around the edges.
       const bodyRailMaterial = new THREE.MeshStandardMaterial({
         color: new THREE.Color(deviceColor || "#8e8e93"),
-        roughness: 0.18,
-        metalness: 0.95,
+        roughness: 0.22,
+        metalness: 0.98,
       });
       const bodyShape = roundedRectShape(PHONE_WIDTH, PHONE_HEIGHT, BODY_RADIUS);
-      const bodyGeometry = extrudeSlab(bodyShape, PHONE_DEPTH, 0.18);
+      // Higher bevel so the titanium rail reads as a rounded iPhone frame.
+      const bodyGeometry = extrudeSlab(bodyShape, PHONE_DEPTH, 0.28);
       const bodyMesh = new THREE.Mesh(bodyGeometry, [
         bodyCapMaterial,
         bodyRailMaterial,
@@ -276,29 +296,30 @@ export default function CasePreview({
 
       // Slim rounded side buttons: power on the right edge, two volume
       // buttons + an action button on the left edge — flush titanium look.
+      // Keep them thin/long so angled views never read as a second camera.
       const buttonMaterial = new THREE.MeshStandardMaterial({
         color: new THREE.Color(deviceColor || "#8e8e93"),
         roughness: 0.16,
         metalness: 0.96,
       });
       const addSideButton = (yPos: number, side: 1 | -1, length: number) => {
-        const protrusion = 0.016;
-        const thickness = PHONE_DEPTH * 0.62;
+        const protrusion = 0.012;
+        const thickness = PHONE_DEPTH * 0.45;
         const geometry = new RoundedBoxGeometry(
           protrusion,
           length,
           thickness,
-          3,
-          Math.min(protrusion, thickness) * 0.4
+          2,
+          Math.min(protrusion, thickness) * 0.25
         );
         const mesh = new THREE.Mesh(geometry, buttonMaterial);
-        mesh.position.set(side * (PHONE_WIDTH / 2 + protrusion * 0.22), yPos, 0);
+        mesh.position.set(side * (PHONE_WIDTH / 2 + protrusion * 0.15), yPos, 0);
         phoneGroup.add(mesh);
       };
-      addSideButton(0.55, 1, 0.2); // power — right edge
-      addSideButton(0.74, -1, 0.07); // action button — left edge
-      addSideButton(0.52, -1, 0.14); // volume up — left edge
-      addSideButton(0.34, -1, 0.14); // volume down — left edge
+      addSideButton(0.52, 1, 0.22); // power — right edge
+      addSideButton(0.72, -1, 0.06); // action button — left edge
+      addSideButton(0.5, -1, 0.16); // volume up — left edge
+      addSideButton(0.32, -1, 0.16); // volume down — left edge
 
       // ---- front: glossy screen inset + bezel + Dynamic Island ----
       // Sits on the -z face, opposite the case/camera side, so it's
@@ -363,54 +384,84 @@ export default function CasePreview({
 
       // ---- case with textured back plate + camera cutout ----
       // Slightly larger than the body footprint so it visibly wraps the
-      // edges, with a rounded hole around the camera plateau so a thin
-      // rim of the body's cap material shows through — like a real case.
-      const CASE_THICKNESS = 0.022;
-      const CASE_GAP = 0.0015;
-      const CASE_WIDTH = PHONE_WIDTH * 1.028;
-      const CASE_HEIGHT = PHONE_HEIGHT * 1.014;
-      const CASE_RADIUS = BODY_RADIUS * 1.08;
+      // edges. Cutout hugs the camera island tightly — a large gap reads as
+      // a second "ghost" camera square behind the bump.
+      const CASE_THICKNESS = 0.032;
+      const CASE_GAP = 0.001;
+      const CASE_WIDTH = PHONE_WIDTH * 1.045;
+      const CASE_HEIGHT = PHONE_HEIGHT * 1.022;
+      const CASE_RADIUS = BODY_RADIUS * 1.05;
 
-      // iPhone Pro-style square camera island (2×2 lens grid).
-      const PLATEAU_SIZE = PHONE_WIDTH * 0.46;
-      const PLATEAU_RADIUS = PLATEAU_SIZE * 0.22;
-      const plateauX = -PHONE_WIDTH / 2 + PLATEAU_SIZE / 2 + PHONE_WIDTH * 0.055;
-      const plateauY = PHONE_HEIGHT / 2 - PLATEAU_SIZE / 2 - PHONE_WIDTH * 0.055;
-      const cutoutMargin = PLATEAU_SIZE * 0.06;
+      // iPhone Pro island — on the PHONE body (not the case). Inset from
+      // top/left so it never clips the rounded frame at an angle.
+      const PLATEAU_SIZE = PHONE_WIDTH * 0.34;
+      const PLATEAU_RADIUS = PLATEAU_SIZE * 0.26;
+      const plateauX = -PHONE_WIDTH / 2 + PLATEAU_SIZE / 2 + PHONE_WIDTH * 0.12;
+      const plateauY = PHONE_HEIGHT / 2 - PLATEAU_SIZE / 2 - PHONE_WIDTH * 0.13;
+      // Tall enough to clear the seated case so the bump peeks through the hole.
+      const PLATEAU_THICKNESS = CASE_GAP + CASE_THICKNESS + 0.012;
+
+      /** Clockwise rounded-rect Path for Shape.holes (opposite outer winding). */
+      function roundedRectHole(
+        width: number,
+        height: number,
+        radius: number,
+        cx = 0,
+        cy = 0
+      ) {
+        const path = new THREE.Path();
+        const r = Math.min(radius, width / 2, height / 2);
+        const x = cx - width / 2;
+        const y = cy - height / 2;
+        path.moveTo(x + r, y);
+        path.lineTo(x + width - r, y);
+        path.absarc(x + width - r, y + r, r, -Math.PI / 2, 0, false);
+        path.lineTo(x + width, y + height - r);
+        path.absarc(x + width - r, y + height - r, r, 0, Math.PI / 2, false);
+        path.lineTo(x + r, y + height);
+        path.absarc(x + r, y + height - r, r, Math.PI / 2, Math.PI, false);
+        path.lineTo(x, y + r);
+        path.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false);
+        return path;
+      }
 
       const textureLoader = new THREE.TextureLoader();
-      const designMaterial = new THREE.MeshStandardMaterial({
+      const designMaterial = new THREE.MeshPhysicalMaterial({
         color: 0xffffff,
-        roughness: 0.5,
-        metalness: 0.08,
+        roughness: 0.38,
+        metalness: 0.05,
+        clearcoat: 0.65,
+        clearcoatRoughness: 0.22,
       });
+      // Case lip wraps the phone rail — slightly lighter so the frame reads.
       const caseEdgeMaterial = new THREE.MeshStandardMaterial({
-        color: 0x141416,
-        roughness: 0.65,
-        metalness: 0.12,
+        color: 0x2a2a30,
+        roughness: 0.35,
+        metalness: 0.4,
       });
 
+      // Case art with a tight camera window — island stays on the phone and
+      // shows through; when the case lifts, the phone camera stays put.
       const caseShape = roundedRectShape(CASE_WIDTH, CASE_HEIGHT, CASE_RADIUS);
-      const caseCutout = roundedRectShape(
-        PLATEAU_SIZE + cutoutMargin * 2,
-        PLATEAU_SIZE + cutoutMargin * 2,
-        PLATEAU_RADIUS + cutoutMargin,
-        plateauX,
-        plateauY
+      // Slightly larger than the island so the phone camera reads through a
+      // clean window — not a second bump glued to the case.
+      const CUTOUT_SIZE = PLATEAU_SIZE * 1.12;
+      const CUTOUT_RADIUS = PLATEAU_RADIUS * 1.08;
+      caseShape.holes.push(
+        roundedRectHole(CUTOUT_SIZE, CUTOUT_SIZE, CUTOUT_RADIUS, plateauX, plateauY)
       );
-      caseShape.holes.push(caseCutout);
 
       const CASE_REST_Z = PHONE_DEPTH / 2 + CASE_GAP + CASE_THICKNESS / 2;
-      // Far enough that the gap reads clearly even when the phone faces the camera.
-      const CASE_SEPARATE_Z = CASE_REST_Z + 0.42;
+      // Clear air gap on hover without sending the case off-frame.
+      const CASE_SEPARATE_Z = CASE_REST_Z + 0.55;
       const caseGeometry = extrudeSlab(caseShape, CASE_THICKNESS, 0.3);
       // Only the cap faces (material index 0) carry the design texture;
       // the edge material has no map, so normalizing every vertex's UV
       // uniformly is harmless there and keeps this simple.
       normalizeUVsToBounds(caseGeometry, CASE_WIDTH, CASE_HEIGHT);
 
-      // Own group so hover can lift the case off the phone body without
-      // moving the camera module (which stays on the phone).
+      // Own group so hover can lift the case off the phone body.
+      // Camera island is NOT here — it belongs to the phone.
       const caseGroup = new THREE.Group();
       caseGroup.position.z = CASE_REST_Z;
       const caseMesh = new THREE.Mesh(caseGeometry, [
@@ -446,93 +497,90 @@ export default function CasePreview({
       };
       loadDesignTexture(designUrl);
 
-      // ---- iPhone Pro camera island: square module, 2×2 lenses ----
-      const PLATEAU_THICKNESS = 0.052;
+      // ---- iPhone Pro camera island: raised housing + 3 visible lenses ----
+      // Mounted on the phone body so it stays put when the case peels away.
       const plateauShape = roundedRectShape(
         PLATEAU_SIZE,
         PLATEAU_SIZE,
         PLATEAU_RADIUS
       );
-      const plateauGeometry = extrudeSlab(plateauShape, PLATEAU_THICKNESS, 0.12);
+      const plateauGeometry = extrudeSlab(plateauShape, PLATEAU_THICKNESS, 0.1);
       const plateauMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1a1a1e,
-        roughness: 0.42,
-        metalness: 0.62,
+        color: 0x3a3a40,
+        roughness: 0.32,
+        metalness: 0.78,
       });
       const plateauFrontZ = PLATEAU_THICKNESS / 2;
 
       const cameraModuleGroup = new THREE.Group();
-      // Overlap slightly into the body so the plateau's base has no gap,
-      // then protrude out past the case surface.
+      // Sit on the phone back (+z); bump clears through the case cutout.
       cameraModuleGroup.position.set(
         plateauX,
         plateauY,
-        PHONE_DEPTH / 2 - 0.006 + PLATEAU_THICKNESS / 2
+        PHONE_DEPTH / 2 + PLATEAU_THICKNESS / 2 - 0.002
       );
       const plateauMesh = new THREE.Mesh(plateauGeometry, plateauMaterial);
       cameraModuleGroup.add(plateauMesh);
       phoneGroup.add(cameraModuleGroup);
 
-      // Soft inset ring under each lens (Pro glass look).
       const lensWellMaterial = new THREE.MeshStandardMaterial({
-        color: 0x0a0a0c,
+        color: 0x111114,
         roughness: 0.55,
         metalness: 0.25,
       });
       const lensRimMaterial = new THREE.MeshStandardMaterial({
-        color: 0xc4c4ca,
-        roughness: 0.18,
+        color: 0xe8e8ee,
+        roughness: 0.15,
         metalness: 0.95,
       });
-      const lensGlassMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x05050c,
-        roughness: 0.03,
-        metalness: 0.15,
-        clearcoat: 1,
-        clearcoatRoughness: 0.04,
-        reflectivity: 0.9,
+      // Avoid MeshPhysicalMaterial.transmission here — without a full
+      // transmission pipeline it often paints as an opaque black plate.
+      const lensGlassMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1a1a28,
+        roughness: 0.08,
+        metalness: 0.35,
       });
       const lensHighlightMaterial = new THREE.MeshStandardMaterial({
-        color: 0x2e2e3a,
-        roughness: 0.04,
-        metalness: 0.35,
-        emissive: 0x1a1a28,
-        emissiveIntensity: 0.22,
+        color: 0x6a6a7a,
+        roughness: 0.12,
+        metalness: 0.4,
+        emissive: 0x2a2a38,
+        emissiveIntensity: 0.45,
       });
 
       const addLens = (localX: number, localY: number, radius: number) => {
         const well = new THREE.Mesh(
-          new THREE.CylinderGeometry(radius * 1.38, radius * 1.38, 0.006, 36),
+          new THREE.CylinderGeometry(radius * 1.45, radius * 1.45, 0.012, 48),
           lensWellMaterial
         );
         well.rotation.x = Math.PI / 2;
         well.position.set(localX, localY, plateauFrontZ + 0.004);
         cameraModuleGroup.add(well);
 
-        const rimThickness = 0.012;
+        const rimThickness = 0.016;
         const rim = new THREE.Mesh(
           new THREE.CylinderGeometry(
-            radius * 1.18,
-            radius * 1.18,
+            radius * 1.22,
+            radius * 1.22,
             rimThickness,
-            36
+            48
           ),
           lensRimMaterial
         );
         rim.rotation.x = Math.PI / 2;
-        rim.position.set(localX, localY, plateauFrontZ + 0.008 + rimThickness / 2);
+        rim.position.set(localX, localY, plateauFrontZ + 0.012 + rimThickness / 2);
         cameraModuleGroup.add(rim);
 
-        const glassThickness = 0.009;
+        const glassThickness = 0.01;
         const glass = new THREE.Mesh(
-          new THREE.CylinderGeometry(radius, radius, glassThickness, 36),
+          new THREE.CylinderGeometry(radius * 0.9, radius * 0.9, glassThickness, 48),
           lensGlassMaterial
         );
         glass.rotation.x = Math.PI / 2;
         glass.position.set(
           localX,
           localY,
-          plateauFrontZ + 0.008 + rimThickness + glassThickness / 2 - 0.002
+          plateauFrontZ + 0.012 + rimThickness + glassThickness / 2
         );
         cameraModuleGroup.add(glass);
 
@@ -540,8 +588,8 @@ export default function CasePreview({
         const dome = new THREE.Mesh(
           new THREE.SphereGeometry(
             domeRadius,
+            24,
             16,
-            12,
             0,
             Math.PI * 2,
             0,
@@ -553,74 +601,75 @@ export default function CasePreview({
         dome.position.set(
           localX,
           localY,
-          plateauFrontZ + 0.008 + rimThickness + glassThickness - domeRadius * 0.45
+          plateauFrontZ + 0.012 + rimThickness + glassThickness - domeRadius * 0.3
         );
         cameraModuleGroup.add(dome);
       };
 
-      // Classic iPhone Pro triangle: three large lenses + flash/mic on the right.
-      const lensRadius = PLATEAU_SIZE * 0.132;
-      const lensOffset = PLATEAU_SIZE * 0.175;
-      addLens(-lensOffset, lensOffset, lensRadius); // top-left (main)
-      addLens(lensOffset, lensOffset, lensRadius * 0.98); // top-right (ultra / tele)
-      addLens(-lensOffset, -lensOffset, lensRadius * 0.98); // bottom-left (tele / ultra)
+      // Classic iPhone Pro triangle: three large lenses + flash/mic.
+      // Slightly smaller so rings stay inside the island at every angle.
+      const lensRadius = PLATEAU_SIZE * 0.118;
+      const lensOffset = PLATEAU_SIZE * 0.155;
+      addLens(-lensOffset, lensOffset, lensRadius);
+      addLens(lensOffset, lensOffset, lensRadius * 0.97);
+      addLens(-lensOffset, -lensOffset, lensRadius * 0.97);
 
-      // Flash + mic sit in the open bottom-right quadrant of the island.
       const flashMaterial = new THREE.MeshStandardMaterial({
-        color: 0xfff4dc,
-        roughness: 0.32,
+        color: 0xfff6e4,
+        roughness: 0.25,
         metalness: 0.05,
-        emissive: 0xffefc4,
-        emissiveIntensity: 0.8,
+        emissive: 0xffefc8,
+        emissiveIntensity: 1.1,
       });
       const flash = new THREE.Mesh(
         new THREE.CylinderGeometry(
           PLATEAU_SIZE * 0.055,
           PLATEAU_SIZE * 0.055,
-          0.008,
-          24
+          0.01,
+          32
         ),
         flashMaterial
       );
       flash.rotation.x = Math.PI / 2;
-      flash.position.set(lensOffset * 0.85, -lensOffset * 0.35, plateauFrontZ + 0.006);
+      flash.position.set(lensOffset * 0.9, -lensOffset * 0.3, plateauFrontZ + 0.01);
       cameraModuleGroup.add(flash);
 
       const micMaterial = new THREE.MeshStandardMaterial({
-        color: 0x080808,
-        roughness: 0.55,
-        metalness: 0.15,
+        color: 0x0a0a0a,
+        roughness: 0.5,
+        metalness: 0.2,
       });
       const mic = new THREE.Mesh(
         new THREE.CylinderGeometry(
           PLATEAU_SIZE * 0.024,
           PLATEAU_SIZE * 0.024,
-          0.006,
-          16
+          0.008,
+          20
         ),
         micMaterial
       );
       mic.rotation.x = Math.PI / 2;
-      mic.position.set(lensOffset * 0.35, -lensOffset * 0.95, plateauFrontZ + 0.005);
+      mic.position.set(lensOffset * 0.3, -lensOffset * 0.95, plateauFrontZ + 0.008);
       cameraModuleGroup.add(mic);
 
       const sensor = new THREE.Mesh(
         new THREE.CylinderGeometry(
           PLATEAU_SIZE * 0.016,
           PLATEAU_SIZE * 0.016,
-          0.005,
-          12
+          0.007,
+          16
         ),
         micMaterial
       );
       sensor.rotation.x = Math.PI / 2;
-      sensor.position.set(lensOffset * 1.15, -lensOffset * 0.95, plateauFrontZ + 0.004);
+      sensor.position.set(lensOffset * 1.15, -lensOffset * 0.95, plateauFrontZ + 0.007);
       cameraModuleGroup.add(sensor);
 
-      // Hover: lift the case off the phone (hero only).
+      // Hover / tap: lift the case off the phone (hero only).
       const prefersReducedMotion = window.matchMedia(
         "(prefers-reduced-motion: reduce)"
       ).matches;
+      const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
       let caseHoverTarget = 0; // 0 = seated, 1 = separated
       let caseHoverAmount = 0;
       const onCaseHoverEnter = () => {
@@ -630,9 +679,16 @@ export default function CasePreview({
       const onCaseHoverLeave = () => {
         caseHoverTarget = 0;
       };
+      // Touch / coarse pointers: tap toggles separation (no reliable hover).
+      const onCaseTapToggle = (e: PointerEvent) => {
+        if (!separateCaseOnHover || prefersReducedMotion || finePointer) return;
+        if (e.pointerType === "mouse") return;
+        caseHoverTarget = caseHoverTarget > 0.5 ? 0 : 1;
+      };
       if (separateCaseOnHover) {
         container.addEventListener("pointerenter", onCaseHoverEnter);
         container.addEventListener("pointerleave", onCaseHoverLeave);
+        container.addEventListener("pointerup", onCaseTapToggle);
       }
 
       // Materials that should track the deviceColor prop.
@@ -650,12 +706,15 @@ export default function CasePreview({
             return [key, fill, rim];
           }
           case "neon": {
-            const magenta = new THREE.DirectionalLight(0xff33cc, 1.8);
-            magenta.position.set(-2, 1, 2);
-            const teal = new THREE.DirectionalLight(0x33ffcc, 1.8);
-            teal.position.set(2, -1, 2);
-            const fill = new THREE.AmbientLight(0x220033, 0.4);
-            return [magenta, teal, fill];
+            // Still neon-tinted, but brighter key so the camera island isn't a flat black square.
+            const magenta = new THREE.DirectionalLight(0xff66cc, 1.4);
+            magenta.position.set(-2, 1.5, 2.5);
+            const teal = new THREE.DirectionalLight(0x66ffe0, 1.2);
+            teal.position.set(2.2, -0.5, 2.2);
+            const key = new THREE.DirectionalLight(0xffffff, 1.6);
+            key.position.set(1.5, 3, 4);
+            const fill = new THREE.AmbientLight(0x332244, 0.55);
+            return [magenta, teal, key, fill];
           }
           case "studio":
           default: {
@@ -833,12 +892,31 @@ export default function CasePreview({
       container.addEventListener("keydown", onKeyDown);
 
       // ---- resize handling ----
+      // Keep the full phone (+ bump + hover lift) inside the canvas with margin.
+      const fitCameraDistance = () => {
+        // Generous margin: phone height + camera bump + hover peel + rotation swing.
+        const halfH = (PHONE_HEIGHT / 2) * (separateCaseOnHover ? 1.48 : 1.18);
+        const halfW = (PHONE_WIDTH / 2) * (separateCaseOnHover ? 1.55 : 1.22);
+        const vFov = (camera.fov * Math.PI) / 180;
+        const distH = halfH / Math.tan(vFov / 2);
+        const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+        const distW = halfW / Math.tan(hFov / 2);
+        const base = separateCaseOnHover ? HERO_DISTANCE : DEFAULT_DISTANCE;
+        fittedBaseDistance = Math.max(base, distH, distW);
+        // Don't yank an interactive zoom the user set; hero always refits.
+        if (separateCaseOnHover || !currentInteractive) {
+          cameraDistance = fittedBaseDistance;
+        } else {
+          cameraDistance = Math.max(cameraDistance, fittedBaseDistance * 0.92);
+        }
+      };
       const resize = () => {
         const width = container.clientWidth || 1;
         const height = container.clientHeight || 1;
         renderer.setSize(width, height, false);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        fitCameraDistance();
       };
       resize();
       const resizeObserver = new ResizeObserver(resize);
@@ -860,8 +938,9 @@ export default function CasePreview({
           // Swing gently back and forth around the back face (Y = 0 is the back face)
           // to showcase the case design and 3D depth without showing the blank front screen.
           const time = performance.now() * 0.001;
-          targetRotationY = Math.sin(time * 0.6) * 0.5;
-          targetRotationX = Math.cos(time * 0.3) * 0.1;
+          // Keep swing narrow so the camera island never reads as a side module.
+          targetRotationY = Math.sin(time * 0.55) * 0.28;
+          targetRotationX = Math.cos(time * 0.28) * 0.06;
         }
 
         currentRotationX += (targetRotationX - currentRotationX) * DRAG_DAMPING;
@@ -870,25 +949,28 @@ export default function CasePreview({
         phoneGroup.rotation.y = currentRotationY;
 
         // Ease the case off / onto the phone body on hover.
-        caseHoverAmount += (caseHoverTarget - caseHoverAmount) * Math.min(1, delta * 9);
+        caseHoverAmount += (caseHoverTarget - caseHoverAmount) * Math.min(1, delta * 10);
         const separateT = caseHoverAmount * caseHoverAmount * (3 - 2 * caseHoverAmount); // smoothstep
         caseGroup.position.z = CASE_REST_Z + (CASE_SEPARATE_Z - CASE_REST_Z) * separateT;
-        // Slide + tilt so the phone chassis peeks out from under the case.
-        caseGroup.position.y = 0.07 * separateT;
-        caseGroup.position.x = -0.05 * separateT;
-        caseGroup.rotation.x = -0.14 * separateT;
-        caseGroup.rotation.y = 0.22 * separateT;
-        caseGroup.rotation.z = -0.05 * separateT;
-        caseGroup.scale.setScalar(1 + 0.03 * separateT);
+        // Clear peel: lift + yaw so the air gap between phone and case is obvious.
+        caseGroup.position.y = 0.06 * separateT;
+        caseGroup.position.x = -0.04 * separateT;
+        caseGroup.rotation.x = -0.1 * separateT;
+        caseGroup.rotation.y = 0.16 * separateT;
+        caseGroup.rotation.z = -0.03 * separateT;
+        caseGroup.scale.setScalar(1 + 0.02 * separateT);
 
-        // Nudge the whole phone toward a 3/4 view while separated so the gap reads.
+        // 3/4 view while separated so the empty cutout + phone camera both read.
         if (separateT > 0.01) {
-          targetRotationY += (0.55 - targetRotationY) * 0.04 * separateT;
-          targetRotationX += (0.12 - targetRotationX) * 0.04 * separateT;
+          targetRotationY += (0.48 - targetRotationY) * 0.055 * separateT;
+          targetRotationX += (0.08 - targetRotationX) * 0.055 * separateT;
+          cameraDistance = fittedBaseDistance + 0.28 * separateT;
+        } else if (separateCaseOnHover) {
+          cameraDistance += (fittedBaseDistance - cameraDistance) * 0.08;
         }
 
         camera.position.set(0, 0, cameraDistance);
-        camera.lookAt(0, 0, 0);
+        camera.lookAt(0, 0.02 * separateT, 0);
 
         renderer.render(scene, camera);
       };
@@ -909,6 +991,7 @@ export default function CasePreview({
         if (separateCaseOnHover) {
           container.removeEventListener("pointerenter", onCaseHoverEnter);
           container.removeEventListener("pointerleave", onCaseHoverLeave);
+          container.removeEventListener("pointerup", onCaseTapToggle);
         }
 
         scene.traverse((obj) => {

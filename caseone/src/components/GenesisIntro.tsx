@@ -6,7 +6,6 @@ const SESSION_KEY = "caseone-intro-seen";
 const BRAND = "CASEONE";
 const ACCENT = "#ff2d95";
 const PARTICLE = "#7c5cff";
-const STATUS_COLOR = "#a894ff";
 
 const STATUS_MESSAGES = [
   "Reading your idea...",
@@ -59,6 +58,9 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(() => !shouldSkipIntro());
   const [exiting, setExiting] = useState(false);
+  const [logoOpacity, setLogoOpacity] = useState(0);
+  const [statusOpacity, setStatusOpacity] = useState(0);
+  const [statusText, setStatusText] = useState(STATUS_MESSAGES[0]);
   const finishedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -161,90 +163,27 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       };
       let statusTextIndex = 0;
       let isIntroComplete = false;
-      let lastStatusIndex = -1;
+      let lastPushedLogo = -1;
+      let lastPushedStatus = -1;
+      let lastPushedStatusIndex = -1;
 
-      const hudGroup = new THREE.Group();
-      hudGroup.position.set(0, 0, -3);
-      camera.add(hudGroup);
-      scene.add(camera);
-
-      let logoSprite: ThreeNS.Sprite | null = null;
-      let statusSprite: ThreeNS.Sprite | null = null;
-
-      function createTextTexture(
-        text: string,
-        fontSize: number,
-        color: string,
-        letterSpacing = 0,
-        weight = 700
-      ) {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d")!;
-        const scale = 2;
-        canvas.width = 1024 * scale;
-        canvas.height = 256 * scale;
-        ctx.scale(scale, scale);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.shadowColor = "rgba(7, 6, 12, 0.75)";
-        ctx.shadowBlur = 14;
-        ctx.font = `${weight} ${fontSize}px "Syne", "DM Sans", sans-serif`;
-        ctx.fillStyle = color;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        if (letterSpacing > 0) {
-          (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing =
-            `${letterSpacing}px`;
+      // Typography is HTML overlays (see JSX below) — 3D sprites were getting
+      // clipped / covered by the phone. Keep animState logo/status alphas and
+      // push them into React so the overlays fade with the timeline.
+      const syncHudToDom = () => {
+        if (Math.abs(animState.logoAlpha - lastPushedLogo) > 0.01) {
+          lastPushedLogo = animState.logoAlpha;
+          setLogoOpacity(animState.logoAlpha);
         }
-        ctx.fillText(text, 512, 128);
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.minFilter = THREE.LinearFilter;
-        texture.generateMipmaps = false;
-        return texture;
-      }
-
-      function ensureTypography() {
-        if (!logoSprite) {
-          const logoTex = createTextTexture(BRAND, 48, ACCENT, 12, 800);
-          const logoMat = new THREE.SpriteMaterial({
-            map: logoTex,
-            transparent: true,
-            opacity: 0,
-            depthTest: false,
-            depthWrite: false,
-          });
-          logoSprite = new THREE.Sprite(logoMat);
-          logoSprite.scale.set(3.2, 0.8, 1);
-          logoSprite.position.set(0, 0.45, 0);
-          hudGroup.add(logoSprite);
+        if (Math.abs(animState.statusAlpha - lastPushedStatus) > 0.01) {
+          lastPushedStatus = animState.statusAlpha;
+          setStatusOpacity(animState.statusAlpha);
         }
-
-        if (statusTextIndex !== lastStatusIndex || !statusSprite) {
-          lastStatusIndex = statusTextIndex;
-          if (statusSprite) {
-            statusSprite.material.map?.dispose();
-            statusSprite.material.dispose();
-            hudGroup.remove(statusSprite);
-          }
-          const statusTex = createTextTexture(
-            STATUS_MESSAGES[statusTextIndex] || "",
-            20,
-            STATUS_COLOR,
-            1,
-            500
-          );
-          const statusMat = new THREE.SpriteMaterial({
-            map: statusTex,
-            transparent: true,
-            opacity: animState.statusAlpha,
-            depthTest: false,
-            depthWrite: false,
-          });
-          statusSprite = new THREE.Sprite(statusMat);
-          statusSprite.scale.set(2.6, 0.6, 1);
-          statusSprite.position.set(0, -0.45, 0);
-          hudGroup.add(statusSprite);
+        if (statusTextIndex !== lastPushedStatusIndex) {
+          lastPushedStatusIndex = statusTextIndex;
+          setStatusText(STATUS_MESSAGES[statusTextIndex] || "");
         }
-      }
+      };
 
       const caseGroup = new THREE.Group();
       scene.add(caseGroup);
@@ -344,19 +283,17 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       });
       caseGroup.add(new THREE.Mesh(caseGeometry, caseMaterial));
 
-      const innerMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x111115,
-        roughness: 0.1,
-        metalness: 0.9,
-        transmission: 0.6,
-        thickness: 0.5,
+      const innerMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1c1c20,
+        roughness: 0.35,
+        metalness: 0.55,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
       caseGroup.add(
         new THREE.Mesh(
-          new THREE.BoxGeometry(caseWidth - 0.08, caseHeight - 0.08, caseDepth - 0.04),
+          new THREE.BoxGeometry(caseWidth - 0.1, caseHeight - 0.1, caseDepth - 0.06),
           innerMaterial
         )
       );
@@ -396,16 +333,15 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       screenMesh.position.set(0, 0, caseDepth / 2 + 0.015);
       caseGroup.add(screenMesh);
 
-      // Designed case BACK — real gallery artwork. Unlit + no depth test so it
-      // always reads on top of the shell once revealed (avoids z-fight with the
-      // extruded back face).
+      // Designed case BACK — real gallery artwork. FrontFace only so the
+      // camera cutout doesn't punch a hole through the front of the phone.
       const designMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
         opacity: 0,
-        depthTest: false,
+        depthTest: true,
         depthWrite: false,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
       });
       const designMesh = new THREE.Mesh(
         new THREE.PlaneGeometry(caseWidth - 0.1, caseHeight - 0.1),
@@ -416,7 +352,9 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       designMesh.renderOrder = 10;
       caseGroup.add(designMesh);
 
-      // Soft rounded alpha so art follows the case silhouette (no square corners)
+      // Soft rounded alpha so art follows the case silhouette.
+      // No camera hole — the island sits on top of the art as one piece
+      // (a punched hole was reading as a second ghost camera).
       {
         const mask = document.createElement("canvas");
         mask.width = 512;
@@ -478,36 +416,43 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       islandMesh.position.set(0, caseHeight / 2 - 0.4, caseDepth / 2 + 0.018);
       caseGroup.add(islandMesh);
 
-      const buttonMat = new THREE.MeshPhysicalMaterial({
-        color: 0x222225,
-        roughness: 0.2,
-        metalness: 0.8,
+      const buttonMat = new THREE.MeshStandardMaterial({
+        color: 0x8e8e93,
+        roughness: 0.22,
+        metalness: 0.95,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const powerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.08), buttonMat);
-      powerBtn.position.set(caseWidth / 2 + 0.01, 0.5, 0);
+      const powerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.55, 0.1), buttonMat);
+      powerBtn.position.set(caseWidth / 2 + 0.015, 0.55, 0);
       caseGroup.add(powerBtn);
-      const volUp = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.08), buttonMat);
-      volUp.position.set(-caseWidth / 2 - 0.01, 0.8, 0);
+      const actionBtn = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.18, 0.1), buttonMat);
+      actionBtn.position.set(-caseWidth / 2 - 0.015, 1.05, 0);
+      caseGroup.add(actionBtn);
+      const volUp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.28, 0.1), buttonMat);
+      volUp.position.set(-caseWidth / 2 - 0.015, 0.7, 0);
       caseGroup.add(volUp);
-      const volDown = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.08), buttonMat);
-      volDown.position.set(-caseWidth / 2 - 0.01, 0.4, 0);
+      const volDown = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.28, 0.1), buttonMat);
+      volDown.position.set(-caseWidth / 2 - 0.015, 0.35, 0);
       caseGroup.add(volDown);
 
-      const bumpMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x18181c,
-        roughness: 0.15,
-        metalness: 0.9,
-        clearcoat: 1,
-        clearcoatRoughness: 0.1,
+      // One camera module group — bump + lenses share the same transform so
+      // they never drift into a double-island look.
+      const cameraModule = new THREE.Group();
+      cameraModule.position.set(-0.48, 1.42, -caseDepth / 2 - 0.01);
+      caseGroup.add(cameraModule);
+
+      const bumpMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3a3a40,
+        roughness: 0.3,
+        metalness: 0.82,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const bumpGeo = new THREE.ExtrudeGeometry(createRoundedRectPath(1.0, 1.0, 0.2), {
-        depth: 0.08,
+      const bumpGeo = new THREE.ExtrudeGeometry(createRoundedRectPath(0.92, 0.92, 0.2), {
+        depth: 0.12,
         bevelEnabled: true,
         bevelSegments: 4,
         steps: 1,
@@ -516,48 +461,111 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       });
       bumpGeo.center();
       const cameraBump = new THREE.Mesh(bumpGeo, bumpMaterial);
-      cameraBump.position.set(-0.45, 1.35, -caseDepth / 2 - 0.04);
-      cameraBump.rotation.y = Math.PI;
+      // Extrude grows +Z; push it out the back of the case (negative Z).
+      cameraBump.position.z = -0.06;
       cameraBump.renderOrder = 12;
-      caseGroup.add(cameraBump);
+      cameraModule.add(cameraBump);
 
-      const lensRingMat = new THREE.MeshPhysicalMaterial({
-        color: 0x2d2d32,
-        metalness: 0.9,
-        roughness: 0.1,
+      const lensRingMat = new THREE.MeshStandardMaterial({
+        color: 0xe4e4ea,
+        metalness: 0.95,
+        roughness: 0.14,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const lensGlassMat = new THREE.MeshPhysicalMaterial({
-        color: 0x050505,
-        roughness: 0,
-        transmission: 0.9,
-        thickness: 0.1,
+      const lensGlassMat = new THREE.MeshStandardMaterial({
+        color: 0x1c1c28,
+        roughness: 0.08,
+        metalness: 0.35,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      const lensesGroup = new THREE.Group();
-      lensesGroup.position.set(-0.45, 1.35, -caseDepth / 2 - 0.08);
-      lensesGroup.renderOrder = 13;
-      caseGroup.add(lensesGroup);
+      const lensHighlightMat = new THREE.MeshStandardMaterial({
+        color: 0x6a6a7a,
+        roughness: 0.15,
+        metalness: 0.4,
+        emissive: 0x2a2a38,
+        emissiveIntensity: 0.4,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const flashMat = new THREE.MeshStandardMaterial({
+        color: 0xfff4dc,
+        roughness: 0.25,
+        metalness: 0.05,
+        emissive: 0xffefc4,
+        emissiveIntensity: 1,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const lensWellMat = new THREE.MeshStandardMaterial({
+        color: 0x111114,
+        roughness: 0.55,
+        metalness: 0.2,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const micMat = new THREE.MeshStandardMaterial({
+        color: 0x0a0a0a,
+        roughness: 0.5,
+        metalness: 0.2,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
 
-      function addLens(lx: number, ly: number) {
-        const ringGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.08, 32);
+      function addLens(lx: number, ly: number, radius = 0.16) {
+        const wellGeo = new THREE.CylinderGeometry(radius * 1.35, radius * 1.35, 0.02, 32);
+        wellGeo.rotateX(Math.PI / 2);
+        const well = new THREE.Mesh(wellGeo, lensWellMat);
+        well.position.set(lx, ly, -0.1);
+        cameraModule.add(well);
+
+        const ringGeo = new THREE.CylinderGeometry(radius * 1.15, radius * 1.15, 0.055, 32);
         ringGeo.rotateX(Math.PI / 2);
         const ring = new THREE.Mesh(ringGeo, lensRingMat);
-        ring.position.set(lx, ly, -0.04);
-        lensesGroup.add(ring);
-        const glassGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.02, 32);
+        ring.position.set(lx, ly, -0.13);
+        cameraModule.add(ring);
+
+        const glassGeo = new THREE.CylinderGeometry(radius * 0.88, radius * 0.88, 0.022, 32);
         glassGeo.rotateX(Math.PI / 2);
         const glass = new THREE.Mesh(glassGeo, lensGlassMat);
-        glass.position.set(lx, ly, -0.08);
-        lensesGroup.add(glass);
+        glass.position.set(lx, ly, -0.16);
+        cameraModule.add(glass);
+
+        const dome = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 0.35, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+          lensHighlightMat
+        );
+        dome.rotation.x = Math.PI / 2;
+        dome.position.set(lx, ly, -0.17);
+        cameraModule.add(dome);
       }
-      addLens(-0.22, 0.22);
-      addLens(-0.22, -0.22);
-      addLens(0.22, 0);
+      // iPhone Pro triangle — same local space as the bump (no extra Y flip).
+      addLens(-0.18, 0.18);
+      addLens(0.18, 0.18, 0.155);
+      addLens(-0.18, -0.18, 0.155);
+
+      const flash = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.065, 0.065, 0.028, 24),
+        flashMat
+      );
+      flash.rotation.x = Math.PI / 2;
+      flash.position.set(0.18, -0.06, -0.14);
+      cameraModule.add(flash);
+
+      const mic = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.028, 0.028, 0.018, 16),
+        micMat
+      );
+      mic.rotation.x = Math.PI / 2;
+      mic.position.set(0.06, -0.2, -0.135);
+      cameraModule.add(mic);
 
       const ringMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(PARTICLE),
@@ -674,7 +682,17 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       });
       scene.add(new THREE.LineSegments(lineGeometry, lineMaterial));
 
-      const fadeMaterials = [innerMaterial, bumpMaterial, lensRingMat, lensGlassMat, buttonMat];
+      const fadeMaterials = [
+        innerMaterial,
+        bumpMaterial,
+        lensRingMat,
+        lensGlassMat,
+        lensHighlightMat,
+        flashMat,
+        lensWellMat,
+        micMat,
+        buttonMat,
+      ];
 
       // Slightly faster than the original standalone piece (~6.5s + exit)
       const s = 0.62;
@@ -687,7 +705,7 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         },
       });
 
-      ensureTypography();
+      // HUD text is driven by React overlays via syncHudToDom().
 
       timeline.to(animState, {
         morphProgress: 1,
@@ -753,7 +771,7 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
           duration: 0.12 * s,
           onComplete: () => {
             statusTextIndex = index;
-            ensureTypography();
+            syncHudToDom();
           },
         });
         timeline!.to(animState, { statusAlpha: 1, duration: 0.22 * s });
@@ -798,14 +816,16 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         bumpMaterial.depthTest = true;
         lensRingMat.depthTest = true;
         lensGlassMat.depthTest = true;
+        lensHighlightMat.depthTest = true;
+        flashMat.depthTest = true;
+        lensWellMat.depthTest = true;
+        micMat.depthTest = true;
         particleMaterial.uniforms.uGlobalAlpha.value = animState.particleAlpha;
         ambientRing.scale.setScalar(animState.ambientRingScaleVal);
         ringMat.opacity = animState.ambientRingAlpha;
         ambientRing.rotation.z = elapsed * 0.05;
 
-        ensureTypography();
-        if (logoSprite) logoSprite.material.opacity = animState.logoAlpha;
-        if (statusSprite) statusSprite.material.opacity = animState.statusAlpha;
+        syncHudToDom();
 
         const positions = particleGeometry.attributes.position.array as Float32Array;
         let lineIndex = 0;
@@ -936,6 +956,14 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
     >
       <div className="genesis-intro-bg" aria-hidden="true" />
       <div className="genesis-intro-canvas" ref={mountRef} />
+      <div className="genesis-intro-hud" aria-hidden="true">
+        <p className="genesis-intro-logo" style={{ opacity: logoOpacity }}>
+          {BRAND}
+        </p>
+        <p className="genesis-intro-status" style={{ opacity: statusOpacity }}>
+          {statusText}
+        </p>
+      </div>
       <button type="button" className="genesis-intro-skip" onClick={() => finishRef.current(false)}>
         Skip
       </button>
