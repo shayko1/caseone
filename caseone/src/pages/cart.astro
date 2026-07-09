@@ -8,7 +8,11 @@ import Cart from "../components/Cart.tsx";
 		<div class="cart-page-inner">
 			<p class="eyebrow">Cart</p>
 			<h1 class="cart-page-title">Your Cart</h1>
-			<Cart client:only="react" />
+			<Cart client:only="react">
+				<div class="cart-fallback glass" slot="fallback" aria-live="polite">
+					<p class="cart-empty-copy">Loading your cart…</p>
+				</div>
+			</Cart>
 		</div>
 	</main>
 </Layout>

@@ -794,7 +794,7 @@ export default function Studio({
       <div className="studio-intro">
         <span className="eyebrow">AI Design Studio</span>
         <h1 className="display">Design your case</h1>
-        <p>Describe it, generate concepts, preview in 3D, and make it yours.</p>
+        <p>Describe it, match a curated design, preview in 3D, and make it yours.</p>
       </div>
 
       <ol className="stepper" aria-label="Design steps">

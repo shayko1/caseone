@@ -113,13 +113,13 @@ jq -n \
         description: {
           nodes: [
             { type: "PARAGRAPH", id: "caseone-desc-p1",
-              nodes: [{ type: "TEXT", textData: { text: "Your design, engineered to last. Every CASEONE Custom Case is precision-molded from durable polycarbonate and a shock-absorbing TPU liner, rated for drop protection up to 6 feet — so the one-of-a-kind case you designed stays exactly the way you made it." } }],
+              nodes: [{ type: "TEXT", textData: { text: "Your design, engineered to last. Every CASEONE Custom Case is precision-molded from durable polycarbonate and a shock-absorbing TPU liner, rated for drop protection up to 2.5 meters (8 ft) — so the one-of-a-kind case you designed stays exactly the way you made it." } }],
               paragraphData: { textStyle: { textAlignment: "AUTO" } } },
             { type: "PARAGRAPH", id: "caseone-desc-p2",
               nodes: [{ type: "TEXT", textData: { text: "Built-in MagSafe magnets snap instantly into your charger and mounts. Choose a matte, glossy, or premium leather finish to match how you designed it." } }],
               paragraphData: { textStyle: { textAlignment: "AUTO" } } },
             { type: "PARAGRAPH", id: "caseone-desc-p3",
-              nodes: [{ type: "TEXT", textData: { text: "Made to order, just for you — ships in 3-5 business days." } }],
+              nodes: [{ type: "TEXT", textData: { text: "Made to order, just for you — ships in 5–7 days." } }],
               paragraphData: { textStyle: { textAlignment: "AUTO" } } }
           ],
           metadata: { version: 1, id: "caseone-desc-001" }

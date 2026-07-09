@@ -183,9 +183,16 @@ const testimonialQuotes = [
 
 <Layout
 	title="Caseone — AI-Designed Custom iPhone Cases"
-	description="Design a one-of-one iPhone case with AI. Describe it, preview it in 3D, and hold the only one in the world that looks like you."
+	description="Design a one-of-one iPhone case. Describe a look, get matched to a curated AI design, preview it in 3D, and hold the only one in the world that looks like you."
 >
 	<section class="hero reveal" aria-label="Introduction">
+		<div class="hero-bg" aria-hidden="true">
+			<div class="hero-grid-pattern"></div>
+			<div class="hero-glow-blob hero-glow-blob--1"></div>
+			<div class="hero-glow-blob hero-glow-blob--2"></div>
+			<div class="hero-glow-blob hero-glow-blob--3"></div>
+			<div class="hero-noise-overlay"></div>
+		</div>
 		<div class="hero-rings" aria-hidden="true">
 			<span class="hero-ring hero-ring--1"></span>
 			<span class="hero-ring hero-ring--2"></span>
@@ -193,7 +200,7 @@ const testimonialQuotes = [
 		</div>
 		<div class="hero-grid">
 			<div class="hero-copy">
-				<p class="eyebrow">AI-designed. One of one.</p>
+				<p class="eyebrow">One of one. Matched to you.</p>
 				<h1 class="display hero-tagline">
 					<span>Design the only</span>
 					<span>iPhone case</span>
@@ -202,12 +209,22 @@ const testimonialQuotes = [
 					<span class="hero-tagline-accent">exactly like you</span>
 				</h1>
 				<p class="hero-sub">
-					Every case starts with a prompt. Our AI turns it into a design rendered live on your
-					exact iPhone model — no templates, no duplicates, ever.
+					Describe a look in the Studio — we match your prompt to a curated AI design library,
+					then render it live on your exact iPhone model. No templates, no duplicates, ever.
 				</p>
 				<div class="hero-actions">
-					<a href="/studio" class="btn-primary">Design Yours</a>
-					<a href="/gallery" class="btn-ghost">See the Gallery</a>
+					<a href="/studio" class="btn-primary">
+						Design Yours
+						<svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+							<path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+						</svg>
+					</a>
+					<a href="/gallery" class="btn-ghost">
+						See the Gallery
+						<svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+							<path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+						</svg>
+					</a>
 				</div>
 				<RatingStrip />
 			</div>
@@ -320,8 +337,8 @@ const testimonialQuotes = [
 				<p class="eyebrow">For creators</p>
 				<h3>Turn your look into a case</h3>
 				<p>
-					No two people design the same case twice. Pick a vibe, describe it, and watch AI turn
-					it into something only you own.
+					No two people leave with the same case. Pick a vibe, describe it, and get matched to a
+					design only you own.
 				</p>
 				<a href="/studio" class="btn-ghost">Start designing</a>
 			</article>
@@ -432,7 +449,7 @@ const testimonialQuotes = [
 	}
 
 	.activity-ticker-text {
-		animation: tile-fade-in 500ms ease;
+		animation: tile-fade-in 400ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.trending-carousel-wrap {
@@ -461,7 +478,7 @@ const testimonialQuotes = [
 		flex-direction: column;
 		gap: 0.6rem;
 		border-radius: var(--radius);
-		transition: transform 0.25s ease, box-shadow 0.25s ease;
+		transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.trending-tile:hover {
@@ -480,7 +497,7 @@ const testimonialQuotes = [
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		transition: transform 0.35s ease;
+		transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.trending-tile:hover .trending-tile-frame img {
@@ -530,7 +547,7 @@ const testimonialQuotes = [
 		font-size: 1.3rem;
 		line-height: 1;
 		cursor: pointer;
-		transition: border-color 0.2s ease, transform 0.15s ease;
+		transition: border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), transform 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.trending-arrow:hover {

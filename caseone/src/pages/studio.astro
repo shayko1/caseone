@@ -22,7 +22,7 @@ const initialPrompt = Astro.url.searchParams.get("prompt") ?? undefined;
 
 <Layout
   title="AI Design Studio — CASEONE"
-  description="Design a one-of-a-kind custom iPhone case: describe it, generate AI concepts, preview in 3D, personalize, and add it to your cart."
+  description="Design a one-of-a-kind custom iPhone case: describe a look, get matched to a curated AI design, preview in 3D, personalize, and add it to your cart."
 >
   <Studio
     styles={styles}
@@ -30,5 +30,25 @@ const initialPrompt = Astro.url.searchParams.get("prompt") ?? undefined;
     initialStyleSlug={initialStyleSlug}
     initialPrompt={initialPrompt}
     client:only="react"
-  />
+  >
+    <section class="studio-page studio-fallback" aria-label="AI Design Studio" slot="fallback">
+      <div class="studio-intro">
+        <span class="eyebrow">AI Design Studio</span>
+        <h1 class="display">Design your case</h1>
+        <p>Describe it, match a curated design, preview in 3D, and make it yours.</p>
+      </div>
+      <ol class="stepper" aria-label="Design steps">
+        <li><span class="stepper-button is-active"><span class="stepper-index">1</span><span class="stepper-label">Model</span></span></li>
+        <li><span class="stepper-button"><span class="stepper-index">2</span><span class="stepper-label">Prompt &amp; style</span></span></li>
+        <li><span class="stepper-button"><span class="stepper-index">3</span><span class="stepper-label">Generate</span></span></li>
+        <li><span class="stepper-button"><span class="stepper-index">4</span><span class="stepper-label">Preview</span></span></li>
+        <li><span class="stepper-button"><span class="stepper-index">5</span><span class="stepper-label">Finish</span></span></li>
+        <li><span class="stepper-button"><span class="stepper-index">6</span><span class="stepper-label">Personalize</span></span></li>
+        <li><span class="stepper-button"><span class="stepper-index">7</span><span class="stepper-label">Review</span></span></li>
+      </ol>
+      <div class="studio-panel glass">
+        <p class="studio-hint">Loading the studio…</p>
+      </div>
+    </section>
+  </Studio>
 </Layout>

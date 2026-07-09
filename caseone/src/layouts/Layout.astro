@@ -45,7 +45,7 @@ const ogImage = new URL(image, siteOrigin).href;
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
-			href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500&display=swap"
+			href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap"
 			rel="stylesheet"
 		/>
 	</head>
@@ -140,7 +140,7 @@ const ogImage = new URL(image, siteOrigin).href;
 		font-weight: 500;
 		letter-spacing: 0.03em;
 		opacity: 1;
-		transition: opacity 0.25s ease;
+		transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.announcement-text.is-fading {

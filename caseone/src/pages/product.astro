@@ -17,7 +17,7 @@ const PRICE_BY_FINISH: Record<string, string> = {
 
 const FALLBACK_NAME = 'Caseone — One-of-One iPhone Case';
 const FALLBACK_DESCRIPTION =
-	"Every Caseone starts as an AI-composed design, printed once, and shipped to you. Nobody else will ever have this exact case.";
+	"Your design, engineered to last. Every Caseone case is precision-molded from durable polycarbonate and a shock-absorbing TPU liner, rated for drop protection up to 2.5 meters (8 ft). MagSafe-ready, made to order — ships in 5–7 days. Nobody else will ever have this exact case.";
 
 // `product.description` from Wix Stores is rich HTML, not plain text — Astro's
 // `{}` expression escapes it (would show literal "<p>" in the browser), so
@@ -432,7 +432,7 @@ const faqs = [
 	}
 
 	.hero-gallery-image {
-		transition: transform 0.3s ease;
+		transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.hero-gallery-image:hover {
@@ -451,7 +451,7 @@ const faqs = [
 		opacity: 0;
 		pointer-events: none;
 		transform: translateY(100%);
-		transition: transform 0.3s ease, opacity 0.3s ease;
+		transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 	}
 
 	.sticky-buy-bar.is-visible {

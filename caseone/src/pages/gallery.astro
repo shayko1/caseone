@@ -243,7 +243,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		font-weight: 500;
 		border: 1px solid rgba(23, 21, 31, 0.15);
 		background: transparent;
-		transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+		transition: border-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), background 0.15s cubic-bezier(0.22, 1, 0.36, 1), color 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 		cursor: pointer;
 	}
 
@@ -341,7 +341,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 	/* Conversion pass */
 
 	.gallery-card {
-		transition: transform 0.25s ease, box-shadow 0.25s ease;
+		transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.gallery-card:hover {
@@ -350,7 +350,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 	}
 
 	.gallery-card-media img {
-		transition: transform 0.35s ease;
+		transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.gallery-card:hover .gallery-card-media img {
