@@ -108,9 +108,9 @@ button {
 .display {
 	font-family: var(--font-display);
 	font-weight: 800;
-	font-size: clamp(2.5rem, 8vw, 6.5rem);
-	line-height: 1.02;
-	letter-spacing: -0.03em;
+	font-size: clamp(2.8rem, 8.5vw, 7.2rem);
+	line-height: 0.98;
+	letter-spacing: -0.04em;
 	text-transform: none;
 }
 
@@ -795,9 +795,9 @@ main {
 }
 
 .hero .display {
-	font-size: clamp(2rem, 5.4vw, 4.1rem);
-	line-height: 0.96;
-	letter-spacing: -0.035em;
+	font-size: clamp(2.2rem, 6vw, 4.8rem);
+	line-height: 0.94;
+	letter-spacing: -0.04em;
 	text-transform: none;
 }
 
@@ -1624,13 +1624,14 @@ main {
 	align-items: start;
 }
 
-.studio-preview-col {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-	position: sticky;
-	top: 6rem;
-}
+	.studio-preview-col {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		position: sticky;
+		top: 6rem;
+		z-index: 10;
+	}
 
 	.studio-controls-col {
 		display: flex;
@@ -1787,7 +1788,17 @@ main {
 	}
 
 	.studio-preview-col {
-		position: static;
+		position: sticky;
+		top: 4.5rem;
+		z-index: 10;
+		background: var(--canvas-elevated);
+		padding-bottom: 1rem;
+		margin-bottom: 1rem;
+		border-bottom: 1px solid var(--line);
+	}
+	
+	.preview-stage {
+		max-width: 14rem;
 	}
 }
 

@@ -140,6 +140,8 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 								<span class="style-chip" style={`--chip-accent: ${accent}`}>{label}</span>
 								<h3 class="gallery-card-title">{item.title}</h3>
 								<p class="gallery-card-creator">by {item.creatorName}</p>
+							</div>
+							<div class="gallery-card-hover-content">
 								<p class="gallery-card-prompt">&ldquo;{truncatePrompt(item.promptText)}&rdquo;</p>
 								<a class="btn-ghost gallery-card-remix" href={remixHref}>Remix this</a>
 							</div>
@@ -310,6 +312,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		flex-direction: column;
 		overflow: hidden;
 		padding: 0;
+		position: relative;
 	}
 
 	.gallery-card-media {
@@ -330,6 +333,8 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 1.25rem;
+		position: relative;
+		z-index: 2;
 	}
 
 	.style-chip {
@@ -356,15 +361,44 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		opacity: 0.65;
 	}
 
+	.gallery-card-hover-content {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 1.25rem;
+		background: linear-gradient(to top, rgba(18, 16, 26, 0.95) 0%, rgba(18, 16, 26, 0.8) 70%, transparent 100%);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		transform: translateY(100%);
+		opacity: 0;
+		transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+		z-index: 3;
+	}
+
+	.gallery-card:hover .gallery-card-hover-content,
+	.gallery-card:focus-within .gallery-card-hover-content {
+		transform: translateY(0);
+		opacity: 1;
+	}
+
 	.gallery-card-prompt {
 		font-size: 0.9rem;
-		opacity: 0.8;
+		opacity: 0.9;
 		line-height: 1.4;
+		color: #fff;
 	}
 
 	.gallery-card-remix {
 		align-self: flex-start;
-		margin-top: 0.5rem;
+		margin-top: 0.25rem;
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.2);
+	}
+	
+	.gallery-card-remix:hover {
+		background: rgba(255, 255, 255, 0.2);
 	}
 
 	.gallery-empty-state {

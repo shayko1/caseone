@@ -28,15 +28,14 @@ export interface StudioProps {
   initialPrompt?: string;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 const STEP_LABELS: string[] = [
   "Model",
   "Prompt & style",
   "Generate",
   "Preview",
-  "Finish",
-  "Personalize",
+  "Customize",
   "Review",
 ];
 
@@ -243,7 +242,7 @@ export default function Studio({
 
   const goNext = () => {
     if (!canContinueFromStep(step)) return;
-    const next = Math.min(7, step + 1) as Step;
+    const next = Math.min(6, step + 1) as Step;
     setPrevStep(step);
     setStep(next);
     setMaxStepReached((m) => Math.max(m, next));
@@ -600,71 +599,73 @@ export default function Studio({
 
   const renderStep5Controls = () => (
     <>
-      <h2>Choose a finish</h2>
-      <div className="chip-row" role="group" aria-label="Finish">
-        {FINISHES.map((f) => (
-          <button
-            key={f}
-            type="button"
-            className={`chip${finish === f ? " is-selected" : ""}`}
-            aria-pressed={finish === f}
-            onClick={() => setFinish(f)}
-          >
-            {f}
-            {f === "Leather" && <span className="chip-badge">+$20</span>}
-          </button>
-        ))}
+      <h2>Customize</h2>
+      
+      <div className="studio-field">
+        <span className="studio-label">Choose a finish</span>
+        <div className="chip-row" role="group" aria-label="Finish">
+          {FINISHES.map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`chip${finish === f ? " is-selected" : ""}`}
+              aria-pressed={finish === f}
+              onClick={() => setFinish(f)}
+            >
+              {f}
+              {f === "Leather" && <span className="chip-badge">+$20</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="studio-field" style={{ marginTop: '2rem' }}>
+        <span className="studio-label">Personalize (optional)</span>
+        <p className="studio-hint">
+          Up to {PERSONALIZATION_MAX} characters total, shown as an engraved-style caption on your
+          case.
+        </p>
+        <div className="personalize-grid">
+          <div className="studio-field">
+            <label htmlFor="p-initials" className="studio-label">
+              Initials
+            </label>
+            <input
+              id="p-initials"
+              value={initials}
+              onChange={(e) => handlePersonalizationChange("initials", e.target.value)}
+            />
+          </div>
+          <div className="studio-field">
+            <label htmlFor="p-name" className="studio-label">
+              Name
+            </label>
+            <input
+              id="p-name"
+              value={personalName}
+              onChange={(e) => handlePersonalizationChange("name", e.target.value)}
+            />
+          </div>
+          <div className="studio-field">
+            <label htmlFor="p-date" className="studio-label">
+              Date
+            </label>
+            <input
+              id="p-date"
+              value={personalDate}
+              onChange={(e) => handlePersonalizationChange("date", e.target.value)}
+              placeholder="e.g. 2026"
+            />
+          </div>
+        </div>
+        <p className="studio-hint" aria-live="polite">
+          {PERSONALIZATION_MAX - personalizationLength} characters left
+        </p>
       </div>
     </>
   );
 
-  const renderStep6Controls = () => (
-    <>
-      <h2>Personalize (optional)</h2>
-      <p className="studio-hint">
-        Up to {PERSONALIZATION_MAX} characters total, shown as an engraved-style caption on your
-        case.
-      </p>
-      <div className="personalize-grid">
-        <div className="studio-field">
-          <label htmlFor="p-initials" className="studio-label">
-            Initials
-          </label>
-          <input
-            id="p-initials"
-            value={initials}
-            onChange={(e) => handlePersonalizationChange("initials", e.target.value)}
-          />
-        </div>
-        <div className="studio-field">
-          <label htmlFor="p-name" className="studio-label">
-            Name
-          </label>
-          <input
-            id="p-name"
-            value={personalName}
-            onChange={(e) => handlePersonalizationChange("name", e.target.value)}
-          />
-        </div>
-        <div className="studio-field">
-          <label htmlFor="p-date" className="studio-label">
-            Date
-          </label>
-          <input
-            id="p-date"
-            value={personalDate}
-            onChange={(e) => handlePersonalizationChange("date", e.target.value)}
-            placeholder="e.g. 2026"
-          />
-        </div>
-      </div>
-      <p className="studio-hint" aria-live="polite">
-        {PERSONALIZATION_MAX - personalizationLength} characters left
-      </p>
-    </>
-  );
-
-  const renderStep7Controls = () => {
+  const renderStep6Controls = () => {
     if (addState === "added") {
       return (
         <div className="confirmation-panel" role="status">
@@ -791,9 +792,6 @@ export default function Studio({
     case 6:
       mainContent = renderStep6Controls();
       break;
-    case 7:
-      mainContent = renderStep7Controls();
-      break;
     default:
       mainContent = null;
   }
@@ -862,7 +860,7 @@ export default function Studio({
           </div>
         )}
 
-        {step !== 7 && (
+        {step !== 6 && (
           <div className="studio-actions">
             {step > 1 && (
               <button type="button" className="btn-ghost" onClick={goBack}>
@@ -881,7 +879,7 @@ export default function Studio({
             )}
           </div>
         )}
-        {step === 7 && addState !== "added" && (
+        {step === 6 && addState !== "added" && (
           <div className="studio-actions">
             <button type="button" className="btn-ghost" onClick={goBack}>
               Back
