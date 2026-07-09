@@ -28,6 +28,9 @@ const { title, description } = Astro.props;
 		/>
 	</head>
 	<body>
+		<div class="announcement-bar" data-announcement>
+			<p class="announcement-text" data-announcement-text>Free shipping on orders over $75</p>
+		</div>
 		<Nav />
 		<main>
 			<slot />
@@ -50,7 +53,75 @@ const { title, description } = Astro.props;
 				);
 
 				document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+
+				// Manual sweep — the observer can subscribe while the document is
+				// still hidden/pre-render (e.g. a webview that mounts hidden), in
+				// which case its initial records report not-intersecting even for
+				// elements already inside the viewport, and nothing re-triggers for
+				// them afterward since there's no scroll to fire a new observation.
+				// This force-reveals anything already in view; idempotent, since it
+				// skips elements already marked `.in`.
+				const sweepReveal = () => {
+					document.querySelectorAll('.reveal:not(.in)').forEach((el) => {
+						const rect = el.getBoundingClientRect();
+						if (rect.top < window.innerHeight && rect.bottom > 0) {
+							el.classList.add('in');
+							observer.unobserve(el);
+						}
+					});
+				};
+
+				sweepReveal();
+				document.addEventListener('visibilitychange', () => {
+					if (document.visibilityState === 'visible') sweepReveal();
+				});
+				window.addEventListener('load', sweepReveal);
+			}
+
+			// Announcement bar rotation — the first message is already in the
+			// server-rendered markup above, so reduced-motion users (and the
+			// pre-hydration paint for everyone else) just see that one message
+			// and nothing more happens.
+			if (!prefersReducedMotion) {
+				const messages = [
+					'Free shipping on orders over $75',
+					'Made to order — ships in 5–7 days',
+					'★ 4.9 from 12,000+ makers',
+				];
+				const textEl = document.querySelector('[data-announcement-text]');
+				if (textEl) {
+					let messageIndex = 0;
+					setInterval(() => {
+						messageIndex = (messageIndex + 1) % messages.length;
+						textEl.classList.add('is-fading');
+						setTimeout(() => {
+							textEl.textContent = messages[messageIndex];
+							textEl.classList.remove('is-fading');
+						}, 250);
+					}, 4000);
+				}
 			}
 		</script>
 	</body>
 </html>
+
+<style>
+	.announcement-bar {
+		background: var(--ink);
+		color: var(--canvas);
+		text-align: center;
+		padding: 0.5rem 1rem;
+	}
+
+	.announcement-text {
+		font-size: 0.8rem;
+		font-weight: 500;
+		letter-spacing: 0.03em;
+		opacity: 1;
+		transition: opacity 0.25s ease;
+	}
+
+	.announcement-text.is-fading {
+		opacity: 0;
+	}
+</style>

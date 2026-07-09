@@ -2,11 +2,15 @@
 import Layout from "../layouts/Layout.astro";
 import HeroCasePreview from "../components/HeroCasePreview";
 import StylesWall from "../components/StylesWall";
-import { getDesigns, getStyles } from "../lib/wix";
-import type { Design, Style } from "../lib/wix";
+import TrendingCarousel from "../components/TrendingCarousel";
+import ActivityTicker from "../components/ActivityTicker";
+import RatingStrip from "../components/RatingStrip.astro";
+import TrustBadges from "../components/TrustBadges.astro";
+import { getDesigns, getStyles, getGallery } from "../lib/wix";
+import type { Design, Style, GalleryItem } from "../lib/wix";
 
-// getDesigns/getStyles already try/catch internally and resolve to [] on
-// failure, but every SSR call site wraps defensively too, per project
+// getDesigns/getStyles/getGallery already try/catch internally and resolve to
+// [] on failure, but every SSR call site wraps defensively too, per project
 // convention — a throw here can't crash the page mid-render.
 let allDesigns: Design[] = [];
 try {
@@ -22,6 +26,30 @@ try {
 } catch (err) {
   console.error("[index] getStyles failed:", err);
   styles = [];
+}
+
+let gallery: GalleryItem[] = [];
+try {
+  gallery = await getGallery();
+} catch (err) {
+  console.error("[index] getGallery failed:", err);
+  gallery = [];
+}
+
+function titleCaseSlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
+const styleTitleBySlug: Record<string, string> = {};
+for (const style of styles) {
+  styleTitleBySlug[style.slug] = style.title;
+}
+
+function resolveStyleTitle(slug: string): string {
+  return styleTitleBySlug[slug] || titleCaseSlug(slug);
 }
 
 // Pick up to 5 visually strong designs for the hero rotation, one per style
@@ -58,9 +86,98 @@ function pickHeroDesigns(designs: Design[], stylesList: Style[], count: number):
   return picks;
 }
 
+// Round-robins across style buckets (one design per style per round) so the
+// "Trending this week" carousel mixes styles instead of running several
+// designs from the same style back to back.
+function pickMixedDesigns(designs: Design[], count: number): Design[] {
+  if (designs.length === 0) return [];
+
+  const buckets = new Map<string, Design[]>();
+  for (const design of designs) {
+    const bucket = buckets.get(design.styleSlug) ?? [];
+    bucket.push(design);
+    buckets.set(design.styleSlug, bucket);
+  }
+  const bucketList = Array.from(buckets.values());
+
+  const picks: Design[] = [];
+  let round = 0;
+  while (picks.length < count) {
+    let addedThisRound = false;
+    for (const bucket of bucketList) {
+      if (round < bucket.length) {
+        picks.push(bucket[round]);
+        addedThisRound = true;
+        if (picks.length === count) break;
+      }
+    }
+    if (!addedThisRound) break;
+    round++;
+  }
+
+  return picks;
+}
+
+// One testimonial per distinct creator, in gallery order.
+function pickTestimonialItems(items: GalleryItem[], count: number): GalleryItem[] {
+  const seenCreators = new Set<string>();
+  const picks: GalleryItem[] = [];
+  for (const item of items) {
+    if (!item.creatorName || seenCreators.has(item.creatorName)) continue;
+    seenCreators.add(item.creatorName);
+    picks.push(item);
+    if (picks.length === count) break;
+  }
+  return picks;
+}
+
+// Small, plausible city list for a fictional demo brand's ambient activity
+// line — paired with real seeded gallery creators/styles, cycled by index so
+// the composed lines are deterministic (no client-side randomness needed).
+const ACTIVITY_CITIES = [
+  "Berlin",
+  "Austin",
+  "Seoul",
+  "Melbourne",
+  "Lisbon",
+  "Toronto",
+  "Osaka",
+  "Barcelona",
+  "Nairobi",
+  "Auckland",
+];
+
+function buildActivityLines(items: GalleryItem[], count: number): string[] {
+  const lines: string[] = [];
+  for (let i = 0; i < items.length && lines.length < count; i++) {
+    const item = items[i];
+    const firstName = item.creatorName?.split(" ")[0];
+    if (!firstName) continue;
+    const city = ACTIVITY_CITIES[i % ACTIVITY_CITIES.length];
+    const styleTitle = resolveStyleTitle(item.styleSlug);
+    lines.push(`${firstName} in ${city} just designed a ${styleTitle} case`);
+  }
+  return lines;
+}
+
 const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
   .map((design) => design.image)
   .filter(Boolean);
+
+const trendingDesigns = pickMixedDesigns(allDesigns, 9);
+const trendingStyleTitles: Record<string, string> = {};
+for (const design of trendingDesigns) {
+  trendingStyleTitles[design.styleSlug] = resolveStyleTitle(design.styleSlug);
+}
+
+const activityLines = buildActivityLines(gallery, 10);
+
+const testimonialItems = pickTestimonialItems(gallery, 3);
+const testimonialQuotes = [
+  "I described a mood, not a design — and it somehow knew exactly what I meant. Best compliment magnet I own.",
+  "Watching my case spin in 3D before I bought it made the decision instant. Zero regret.",
+  "Nobody else has this case. That's the whole point, and it still gets me every time I catch it on the table.",
+];
 ---
 
 <Layout
@@ -91,6 +208,7 @@ const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
 					<a href="/studio" class="btn-primary">Design Yours</a>
 					<a href="/gallery" class="btn-ghost">See the Gallery</a>
 				</div>
+				<RatingStrip />
 			</div>
 			<div class="hero-preview-frame">
 				<div class="hero-preview-placeholder" aria-hidden="true"></div>
@@ -106,6 +224,14 @@ const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
 			</div>
 		</div>
 	</section>
+
+	{
+		activityLines.length > 0 && (
+			<section class="activity-strip" aria-label="Recent studio activity">
+				<ActivityTicker lines={activityLines} client:only="react" />
+			</section>
+		)
+	}
 
 	<section class="stats reveal" aria-label="Why Caseone">
 		<div class="stats-grid">
@@ -123,6 +249,21 @@ const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
 			</div>
 		</div>
 	</section>
+
+	{
+		trendingDesigns.length > 0 && (
+			<section class="trending reveal" aria-labelledby="trending-heading">
+				<div class="section-head">
+					<p class="eyebrow">Trending this week</p>
+					<h2 id="trending-heading" class="display section-title">
+						Picked by the community
+					</h2>
+					<p class="hero-sub">The designs getting remixed and bought most right now.</p>
+				</div>
+				<TrendingCarousel designs={trendingDesigns} styleTitleBySlug={trendingStyleTitles} client:only="react" />
+			</section>
+		)
+	}
 
 	<section class="styles-wall-section reveal" aria-labelledby="styles-wall-heading">
 		<div class="section-head">
@@ -143,6 +284,34 @@ const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
 			)
 		}
 	</section>
+
+	{
+		testimonialItems.length > 0 && (
+			<section class="testimonials reveal" aria-labelledby="testimonials-heading">
+				<div class="section-head">
+					<p class="eyebrow">From the community</p>
+					<h2 id="testimonials-heading" class="display section-title">
+						Loved by makers
+					</h2>
+				</div>
+				<div class="testimonials-grid">
+					{testimonialItems.map((item, i) => {
+						const label = resolveStyleTitle(item.styleSlug);
+						const firstName = item.creatorName.split(" ")[0] || item.creatorName;
+						return (
+							<article class="testimonial-card glass">
+								<div class="rating-stars" aria-hidden="true">★★★★★</div>
+								<p class="testimonial-quote">"{testimonialQuotes[i % testimonialQuotes.length]}"</p>
+								<p class="testimonial-author">
+									{firstName} — {label} case
+								</p>
+							</article>
+						);
+					})}
+				</div>
+			</section>
+		)
+	}
 
 	<section class="segments reveal" aria-label="Who Caseone is for">
 		<div class="segments-grid">
@@ -175,4 +344,208 @@ const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
 			</article>
 		</div>
 	</section>
+
+	<section class="trust-strip reveal" aria-label="Why customers trust Caseone">
+		<TrustBadges />
+	</section>
 </Layout>
+
+<style>
+	/* Conversion pass — purely Astro-rendered sections (not React islands),
+	   so scoped styles reach them fine. */
+
+	.activity-strip {
+		padding: 0.75rem clamp(1rem, 4vw, 2.5rem);
+		text-align: center;
+	}
+
+	.trending {
+		padding: clamp(3rem, 6vw, 5rem) clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.testimonials {
+		padding: clamp(3rem, 6vw, 5rem) clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.testimonials-grid {
+		max-width: 82rem;
+		margin: 0 auto;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1.5rem;
+	}
+
+	.testimonial-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		padding: clamp(1.5rem, 3vw, 2rem);
+	}
+
+	.testimonial-card .rating-stars {
+		color: var(--coral-cta);
+		font-size: 0.95rem;
+	}
+
+	.testimonial-quote {
+		font-size: 1rem;
+		line-height: 1.55;
+		opacity: 0.85;
+	}
+
+	.testimonial-author {
+		font-size: 0.85rem;
+		opacity: 0.65;
+	}
+
+	.trust-strip {
+		padding: 0 clamp(1rem, 4vw, 2.5rem) clamp(3rem, 6vw, 5rem);
+	}
+
+	@media (max-width: 860px) {
+		.testimonials-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
+
+<style is:global>
+	/* Conversion pass — these classes are rendered by client:only="react"
+	   islands (ActivityTicker, TrendingCarousel), so Astro's scoped-style
+	   data attributes above never reach them; must be global. */
+
+	.activity-ticker {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		font-size: 0.85rem;
+		opacity: 0.7;
+	}
+
+	.activity-ticker-dot {
+		width: 0.4rem;
+		height: 0.4rem;
+		border-radius: 50%;
+		background: var(--teal);
+		flex-shrink: 0;
+	}
+
+	.activity-ticker-text {
+		animation: tile-fade-in 500ms ease;
+	}
+
+	.trending-carousel-wrap {
+		position: relative;
+		max-width: 82rem;
+		margin: 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.trending-track {
+		display: flex;
+		gap: 1rem;
+		overflow-x: auto;
+		scroll-snap-type: x mandatory;
+		padding: 0.25rem 0.1rem 1rem;
+		flex: 1;
+	}
+
+	.trending-tile {
+		flex: 0 0 auto;
+		width: 15rem;
+		scroll-snap-align: start;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		border-radius: var(--radius);
+		transition: transform 0.25s ease, box-shadow 0.25s ease;
+	}
+
+	.trending-tile:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 16px 28px -10px rgba(23, 21, 31, 0.25);
+	}
+
+	.trending-tile-frame {
+		aspect-ratio: 3 / 4;
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: rgba(23, 21, 31, 0.06);
+	}
+
+	.trending-tile-frame img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transition: transform 0.35s ease;
+	}
+
+	.trending-tile:hover .trending-tile-frame img {
+		transform: scale(1.06);
+	}
+
+	.trending-tile-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0 0.15rem;
+	}
+
+	.trending-chip {
+		display: inline-flex;
+		align-self: flex-start;
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		padding: 0.25rem 0.65rem;
+		border-radius: 999px;
+		color: var(--coral-cta);
+		background: rgba(255, 90, 71, 0.1);
+	}
+
+	.trending-price {
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 1.05rem;
+	}
+
+	.trending-cta {
+		align-self: flex-start;
+		margin-top: 0.15rem;
+		padding: 0.5rem 1.1rem;
+		font-size: 0.8rem;
+	}
+
+	.trending-arrow {
+		flex-shrink: 0;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 50%;
+		border: 1px solid rgba(23, 21, 31, 0.15);
+		background: var(--canvas);
+		font-size: 1.3rem;
+		line-height: 1;
+		cursor: pointer;
+		transition: border-color 0.2s ease, transform 0.15s ease;
+	}
+
+	.trending-arrow:hover {
+		border-color: var(--ink);
+	}
+
+	.trending-arrow:active {
+		transform: scale(0.92);
+	}
+
+	.trending-empty {
+		max-width: 82rem;
+		margin: 0 auto;
+		padding: 3rem;
+		border-radius: var(--radius);
+		text-align: center;
+		opacity: 0.7;
+	}
+</style>

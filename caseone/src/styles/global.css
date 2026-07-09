@@ -1337,3 +1337,35 @@ main {
 		flex-direction: column-reverse;
 	}
 }
+
+/* ==========================================================================
+   Conversion pass
+   ========================================================================== */
+
+/* Site-wide CTA press state — additive only, doesn't touch the existing
+   .btn-primary/.btn-ghost :hover rules declared earlier in this file. */
+.btn-primary:active,
+.btn-ghost:active {
+	transform: scale(0.97);
+}
+
+/* Hover-lift for the homepage AI styles wall (StylesWall.tsx renders via
+   client:only="react", so this can't live in that page's scoped <style> —
+   Astro's scoping attributes never reach island DOM). Additive: the base
+   .styles-wall-tile / .styles-wall-tile img rules are declared earlier. */
+.styles-wall-tile {
+	transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.styles-wall-tile img {
+	transition: transform 0.3s ease;
+}
+
+.styles-wall-tile:hover {
+	transform: translateY(-4px);
+	box-shadow: 0 16px 28px -10px rgba(23, 21, 31, 0.25);
+}
+
+.styles-wall-tile:hover img {
+	transform: scale(1.05);
+}

@@ -1,0 +1,65 @@
+---
+// Static compact trust row, reused on the homepage and product page near the
+// price/CTA — no data dependency, so no empty-state handling needed.
+interface Props {
+	align?: 'center' | 'start';
+}
+
+const { align = 'center' } = Astro.props;
+
+const BADGES = [
+	'2.5m drop protection',
+	'MagSafe compatible',
+	'Free shipping $75+',
+	'30-day remake guarantee',
+];
+---
+
+<ul class:list={['trust-badges', `trust-badges--${align}`]}>
+	{
+		BADGES.map((badge) => (
+			<li class="trust-badge">
+				<span class="trust-badge-check" aria-hidden="true">
+					✓
+				</span>
+				{badge}
+			</li>
+		))
+	}
+</ul>
+
+<style>
+	.trust-badges {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 1.5rem 2rem;
+	}
+
+	.trust-badges--start {
+		justify-content: flex-start;
+		gap: 1rem 1.5rem;
+	}
+
+	.trust-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+		opacity: 0.8;
+	}
+
+	.trust-badge-check {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.15rem;
+		height: 1.15rem;
+		border-radius: 50%;
+		background: rgba(31, 182, 166, 0.15);
+		color: var(--teal);
+		font-size: 0.7rem;
+		flex-shrink: 0;
+	}
+</style>

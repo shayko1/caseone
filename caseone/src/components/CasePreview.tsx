@@ -95,7 +95,7 @@ export default function CasePreview({
     textureLoader: ThreeNS.TextureLoader;
     designTexture: ThreeNS.Texture | null;
     designMaterial: ThreeNS.MeshStandardMaterial;
-    bodyMaterial: ThreeNS.MeshStandardMaterial;
+    deviceColorMaterials: ThreeNS.MeshStandardMaterial[];
     lights: Record<LightingPreset, ThreeNS.Light[]>;
     setLighting: (preset: LightingPreset) => void;
     setDesignTexture: (url: string) => void;
@@ -143,47 +143,252 @@ export default function CasePreview({
       camera.position.set(0, 0, cameraDistance);
 
       // ---- phone body ----
-      // Aspect ratio per brief: 1 : 2.05 : 0.045 (width : height : depth).
+      // Aspect ratio per brief: 1 : 2.05 : 0.045 (width : height : depth),
+      // with a pronounced iPhone-style corner radius. RoundedBoxGeometry
+      // can't produce a big *silhouette* radius on a body this thin — its
+      // radius is clamped to half the smallest dimension, i.e. half the
+      // depth — so the body/case/camera plateau below are built from
+      // extruded rounded-rect shapes instead, which round the XY
+      // silhouette and the Z edges independently.
       const PHONE_WIDTH = 1;
       const PHONE_HEIGHT = 2.05;
       const PHONE_DEPTH = 0.045;
+      const BODY_RADIUS = PHONE_WIDTH * 0.075;
 
       const phoneGroup = new THREE.Group();
       scene.add(phoneGroup);
 
-      const bodyMaterial = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(deviceColor || "#1c1c1e"),
-        roughness: 0.45,
-        metalness: 0.35,
-      });
+      /** Rounded-rectangle Shape centered at (cx, cy). */
+      function roundedRectShape(
+        width: number,
+        height: number,
+        radius: number,
+        cx = 0,
+        cy = 0
+      ) {
+        const shape = new THREE.Shape();
+        const r = Math.min(radius, width / 2, height / 2);
+        const x = cx - width / 2;
+        const y = cy - height / 2;
+        shape.moveTo(x, y + r);
+        shape.lineTo(x, y + height - r);
+        shape.absarc(x + r, y + height - r, r, Math.PI, Math.PI / 2, true);
+        shape.lineTo(x + width - r, y + height);
+        shape.absarc(x + width - r, y + height - r, r, Math.PI / 2, 0, true);
+        shape.lineTo(x + width, y + r);
+        shape.absarc(x + width - r, y + r, r, 0, -Math.PI / 2, true);
+        shape.lineTo(x + r, y);
+        shape.absarc(x + r, y + r, r, -Math.PI / 2, -Math.PI, true);
+        return shape;
+      }
 
-      const bodyGeometry = new RoundedBoxGeometry(
-        PHONE_WIDTH,
-        PHONE_HEIGHT,
-        PHONE_DEPTH,
-        4,
-        0.09
-      );
-      const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+      /**
+       * three.js's default UVGenerator for ExtrudeGeometry/ShapeGeometry
+       * pushes raw object-space x/y as the UV (literally `// world uvs` in
+       * three's own source) — it never normalizes to [0, 1]. Left alone, a
+       * texture only fills the small x∈[0,1], y∈[0,1] region of the shape
+       * instead of stretching edge-to-edge. Remaps a geometry's `uv`
+       * attribute into [0, 1] over the given width/height, centered at
+       * (cx, cy) — matching the rounded-rect shape it was built from.
+       */
+      function normalizeUVsToBounds(
+        geometry: InstanceType<typeof THREE.BufferGeometry>,
+        width: number,
+        height: number,
+        cx = 0,
+        cy = 0
+      ) {
+        // Known to be a plain Float32BufferAttribute for shape-based
+        // geometries built above; narrow past the GLBufferAttribute variant
+        // in BufferGeometry.attributes' union type.
+        const uv = geometry.attributes.uv as ThreeNS.BufferAttribute;
+        for (let i = 0; i < uv.count; i++) {
+          const x = uv.getX(i);
+          const y = uv.getY(i);
+          uv.setXY(i, (x - cx) / width + 0.5, (y - cy) / height + 0.5);
+        }
+        uv.needsUpdate = true;
+      }
+
+      /** Extrudes a rounded-rect shape into a bevelled slab, centered on the Z axis. */
+      function extrudeSlab(
+        shape: InstanceType<typeof THREE.Shape>,
+        totalThickness: number,
+        bevelFraction = 0.22
+      ) {
+        const bevelThickness = totalThickness * bevelFraction;
+        const coreDepth = Math.max(
+          totalThickness - bevelThickness * 2,
+          totalThickness * 0.3
+        );
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+          depth: coreDepth,
+          bevelEnabled: true,
+          bevelThickness,
+          bevelSize: bevelThickness * 0.85,
+          bevelSegments: 3,
+          curveSegments: 14,
+        });
+        geometry.translate(0, 0, -coreDepth / 2);
+        return geometry;
+      }
+
+      // Body cap (material index 0, front + back faces) is device-color
+      // metal — mostly hidden under the case and screen, but it's what
+      // peeks through the case's camera cutout. The side rail (index 1)
+      // is a distinct brushed-metal band around the edges.
+      const bodyCapMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(deviceColor || "#8e8e93"),
+        roughness: 0.42,
+        metalness: 0.55,
+      });
+      const bodyRailMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(deviceColor || "#8e8e93"),
+        roughness: 0.28,
+        metalness: 0.9,
+      });
+      const bodyShape = roundedRectShape(PHONE_WIDTH, PHONE_HEIGHT, BODY_RADIUS);
+      const bodyGeometry = extrudeSlab(bodyShape, PHONE_DEPTH);
+      const bodyMesh = new THREE.Mesh(bodyGeometry, [
+        bodyCapMaterial,
+        bodyRailMaterial,
+      ]);
       phoneGroup.add(bodyMesh);
 
-      // ---- back plate with design texture ----
+      // Slim rounded side buttons: power on the right edge, two volume
+      // buttons + an action button on the left edge.
+      const buttonMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(deviceColor || "#8e8e93"),
+        roughness: 0.22,
+        metalness: 0.92,
+      });
+      const addSideButton = (yPos: number, side: 1 | -1, length: number) => {
+        const protrusion = 0.02;
+        const thickness = PHONE_DEPTH * 0.55;
+        const geometry = new RoundedBoxGeometry(
+          protrusion,
+          length,
+          thickness,
+          2,
+          Math.min(protrusion, thickness) * 0.45
+        );
+        const mesh = new THREE.Mesh(geometry, buttonMaterial);
+        mesh.position.set(side * (PHONE_WIDTH / 2 + protrusion * 0.25), yPos, 0);
+        phoneGroup.add(mesh);
+      };
+      addSideButton(0.58, 1, 0.17); // power — right edge
+      addSideButton(0.72, -1, 0.09); // action button — left edge
+      addSideButton(0.5, -1, 0.15); // volume up — left edge
+      addSideButton(0.32, -1, 0.15); // volume down — left edge
+
+      // ---- front: glossy screen inset + bezel + Dynamic Island ----
+      // Sits on the -z face, opposite the case/camera side, so it's
+      // revealed when the phone is rotated around.
+      const FRONT_Z = -PHONE_DEPTH / 2 - 0.001;
+      const bezelMaterial = new THREE.MeshStandardMaterial({
+        color: 0x0b0b0d,
+        roughness: 0.35,
+        metalness: 0.1,
+        side: THREE.DoubleSide,
+      });
+      const bezelShape = roundedRectShape(
+        PHONE_WIDTH * 0.965,
+        PHONE_HEIGHT * 0.978,
+        BODY_RADIUS * 0.88
+      );
+      const bezelMesh = new THREE.Mesh(
+        new THREE.ShapeGeometry(bezelShape),
+        bezelMaterial
+      );
+      bezelMesh.position.z = FRONT_Z;
+      phoneGroup.add(bezelMesh);
+
+      const screenMaterial = new THREE.MeshStandardMaterial({
+        color: 0x03030a,
+        roughness: 0.05,
+        metalness: 0.2,
+        side: THREE.DoubleSide,
+      });
+      const screenShape = roundedRectShape(
+        PHONE_WIDTH * 0.9,
+        PHONE_HEIGHT * 0.945,
+        BODY_RADIUS * 0.72
+      );
+      const screenMesh = new THREE.Mesh(
+        new THREE.ShapeGeometry(screenShape),
+        screenMaterial
+      );
+      screenMesh.position.z = FRONT_Z - 0.001;
+      phoneGroup.add(screenMesh);
+
+      const islandMaterial = new THREE.MeshStandardMaterial({
+        color: 0x000000,
+        roughness: 0.4,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      });
+      const islandShape = roundedRectShape(
+        PHONE_WIDTH * 0.24,
+        PHONE_WIDTH * 0.075,
+        PHONE_WIDTH * 0.0375
+      );
+      const islandMesh = new THREE.Mesh(
+        new THREE.ShapeGeometry(islandShape),
+        islandMaterial
+      );
+      islandMesh.position.set(0, PHONE_HEIGHT * 0.42, FRONT_Z - 0.002);
+      phoneGroup.add(islandMesh);
+
+      // ---- case with textured back plate + camera cutout ----
+      // Slightly larger than the body footprint so it visibly wraps the
+      // edges, with a rounded hole around the camera plateau so a thin
+      // rim of the body's cap material shows through — like a real case.
+      const CASE_THICKNESS = 0.02;
+      const CASE_GAP = 0.001;
+      const CASE_WIDTH = PHONE_WIDTH * 1.015;
+      const CASE_HEIGHT = PHONE_HEIGHT * 1.008;
+      const CASE_RADIUS = BODY_RADIUS * 1.05;
+
+      const PLATEAU_SIZE = PHONE_WIDTH * 0.42;
+      const PLATEAU_RADIUS = PLATEAU_SIZE * 0.22;
+      const plateauX = -PHONE_WIDTH / 2 + PLATEAU_SIZE / 2 + PHONE_WIDTH * 0.07;
+      const plateauY = PHONE_HEIGHT / 2 - PLATEAU_SIZE / 2 - PHONE_WIDTH * 0.07;
+      const cutoutMargin = PLATEAU_SIZE * 0.05; // uniform rim width around the plateau
+
       const textureLoader = new THREE.TextureLoader();
       const designMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         roughness: 0.55,
         metalness: 0.05,
       });
+      const caseEdgeMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1a1a1a,
+        roughness: 0.75,
+        metalness: 0.05,
+      });
 
-      // Faces +z (toward the default camera position) so the design is
-      // visible immediately on load; this is the case's "display" side.
-      const backPlaneGeometry = new THREE.PlaneGeometry(
-        PHONE_WIDTH * 0.94,
-        PHONE_HEIGHT * 0.94
+      const caseShape = roundedRectShape(CASE_WIDTH, CASE_HEIGHT, CASE_RADIUS);
+      const caseCutout = roundedRectShape(
+        PLATEAU_SIZE + cutoutMargin * 2,
+        PLATEAU_SIZE + cutoutMargin * 2,
+        PLATEAU_RADIUS + cutoutMargin,
+        plateauX,
+        plateauY
       );
-      const backPlane = new THREE.Mesh(backPlaneGeometry, designMaterial);
-      backPlane.position.z = PHONE_DEPTH / 2 + 0.001;
-      phoneGroup.add(backPlane);
+      caseShape.holes.push(caseCutout);
+
+      const CASE_CENTER_Z = PHONE_DEPTH / 2 + CASE_GAP + CASE_THICKNESS / 2;
+      const caseGeometry = extrudeSlab(caseShape, CASE_THICKNESS, 0.3);
+      // Only the cap faces (material index 0) carry the design texture;
+      // the edge material has no map, so normalizing every vertex's UV
+      // uniformly is harmless there and keeps this simple.
+      normalizeUVsToBounds(caseGeometry, CASE_WIDTH, CASE_HEIGHT);
+      const caseMesh = new THREE.Mesh(caseGeometry, [
+        designMaterial,
+        caseEdgeMaterial,
+      ]);
+      caseMesh.position.z = CASE_CENTER_Z;
+      phoneGroup.add(caseMesh);
 
       let designTexture: ThreeNS.Texture | null = null;
       // Tracks the most recently requested URL so a slow-resolving load for
@@ -207,46 +412,129 @@ export default function CasePreview({
       };
       loadDesignTexture(designUrl);
 
-      // ---- camera module (top-left on the back) ----
-      const cameraModuleGroup = new THREE.Group();
-      const moduleMaterial = new THREE.MeshStandardMaterial({
-        color: 0x111114,
-        roughness: 0.3,
-        metalness: 0.6,
-      });
-      const moduleGeometry = new RoundedBoxGeometry(
-        0.34,
-        0.34,
-        0.02,
-        3,
-        0.06
+      // ---- camera plateau: raised block poking through the case cutout ----
+      // Own fixed dark finish (not device-color tinted), like the real thing.
+      const PLATEAU_THICKNESS = 0.05; // protrudes well past the case surface
+      const plateauShape = roundedRectShape(
+        PLATEAU_SIZE,
+        PLATEAU_SIZE,
+        PLATEAU_RADIUS
       );
-      const moduleMesh = new THREE.Mesh(moduleGeometry, moduleMaterial);
-      cameraModuleGroup.add(moduleMesh);
+      const plateauGeometry = extrudeSlab(plateauShape, PLATEAU_THICKNESS, 0.18);
+      const plateauMaterial = new THREE.MeshStandardMaterial({
+        color: 0x161616,
+        roughness: 0.4,
+        metalness: 0.5,
+      });
+      const plateauFrontZ = PLATEAU_THICKNESS / 2;
 
-      const lensMaterial = new THREE.MeshStandardMaterial({
-        color: 0x0a0a0c,
-        roughness: 0.15,
-        metalness: 0.8,
-      });
-      const lensPositions: [number, number][] = [
-        [-0.08, 0.08],
-        [0.08, 0.08],
-        [-0.08, -0.08],
-      ];
-      lensPositions.forEach(([lx, ly]) => {
-        const lensGeometry = new THREE.CylinderGeometry(0.055, 0.055, 0.03, 24);
-        const lens = new THREE.Mesh(lensGeometry, lensMaterial);
-        lens.rotation.x = Math.PI / 2;
-        lens.position.set(lx, ly, 0.02);
-        cameraModuleGroup.add(lens);
-      });
+      const cameraModuleGroup = new THREE.Group();
+      // Overlap slightly into the body so the plateau's base has no gap,
+      // then protrude out past the case surface.
       cameraModuleGroup.position.set(
-        -PHONE_WIDTH / 2 + 0.28,
-        PHONE_HEIGHT / 2 - 0.32,
-        PHONE_DEPTH / 2 + 0.011
+        plateauX,
+        plateauY,
+        PHONE_DEPTH / 2 - 0.006 + PLATEAU_THICKNESS / 2
       );
+      const plateauMesh = new THREE.Mesh(plateauGeometry, plateauMaterial);
+      cameraModuleGroup.add(plateauMesh);
       phoneGroup.add(cameraModuleGroup);
+
+      // Diagonal triple-lens layout (16 Pro style): each lens is a
+      // protruding cylinder with a lighter metallic rim, a dark glossy
+      // glass center, and a tiny raised inner dome for the highlight.
+      const lensRimMaterial = new THREE.MeshStandardMaterial({
+        color: 0xcfcfd4,
+        roughness: 0.25,
+        metalness: 0.85,
+      });
+      const lensGlassMaterial = new THREE.MeshStandardMaterial({
+        color: 0x05050a,
+        roughness: 0.08,
+        metalness: 0.15,
+      });
+      const lensHighlightMaterial = new THREE.MeshStandardMaterial({
+        color: 0x2a2a35,
+        roughness: 0.05,
+        metalness: 0.3,
+        emissive: 0x1a1a22,
+        emissiveIntensity: 0.15,
+      });
+
+      const addLens = (localX: number, localY: number, radius: number) => {
+        const rimThickness = 0.012;
+        const rim = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius * 1.28, radius * 1.28, rimThickness, 28),
+          lensRimMaterial
+        );
+        rim.rotation.x = Math.PI / 2;
+        rim.position.set(localX, localY, plateauFrontZ + rimThickness / 2);
+        cameraModuleGroup.add(rim);
+
+        const glassThickness = 0.01;
+        const glass = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius, radius, glassThickness, 28),
+          lensGlassMaterial
+        );
+        glass.rotation.x = Math.PI / 2;
+        glass.position.set(
+          localX,
+          localY,
+          plateauFrontZ + rimThickness + glassThickness / 2 - 0.002
+        );
+        cameraModuleGroup.add(glass);
+
+        const domeRadius = radius * 0.45;
+        const dome = new THREE.Mesh(
+          new THREE.SphereGeometry(domeRadius, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+          lensHighlightMaterial
+        );
+        dome.rotation.x = Math.PI / 2;
+        dome.position.set(
+          localX,
+          localY,
+          plateauFrontZ + rimThickness + glassThickness - domeRadius * 0.5
+        );
+        cameraModuleGroup.add(dome);
+      };
+
+      const lensRadius = PLATEAU_SIZE * 0.16;
+      const diag = PLATEAU_SIZE * 0.22;
+      addLens(-diag, diag, lensRadius); // top-left
+      addLens(0, 0, lensRadius); // center
+      addLens(diag, -diag, lensRadius); // bottom-right
+
+      // Flash (soft emissive cream) and mic dot in the remaining corners.
+      const flashMaterial = new THREE.MeshStandardMaterial({
+        color: 0xfff3d6,
+        roughness: 0.4,
+        metalness: 0,
+        emissive: 0xfff0c8,
+        emissiveIntensity: 0.6,
+      });
+      const flash = new THREE.Mesh(
+        new THREE.CylinderGeometry(PLATEAU_SIZE * 0.05, PLATEAU_SIZE * 0.05, 0.008, 20),
+        flashMaterial
+      );
+      flash.rotation.x = Math.PI / 2;
+      flash.position.set(diag, diag, plateauFrontZ + 0.004);
+      cameraModuleGroup.add(flash);
+
+      const micMaterial = new THREE.MeshStandardMaterial({
+        color: 0x050505,
+        roughness: 0.6,
+        metalness: 0.1,
+      });
+      const mic = new THREE.Mesh(
+        new THREE.CylinderGeometry(PLATEAU_SIZE * 0.035, PLATEAU_SIZE * 0.035, 0.006, 16),
+        micMaterial
+      );
+      mic.rotation.x = Math.PI / 2;
+      mic.position.set(-diag, -diag, plateauFrontZ + 0.003);
+      cameraModuleGroup.add(mic);
+
+      // Materials that should track the deviceColor prop.
+      const deviceColorMaterials = [bodyCapMaterial, bodyRailMaterial, buttonMaterial];
 
       // ---- lighting presets ----
       const makeLightingRig = (preset: LightingPreset): ThreeNS.Light[] => {
@@ -518,12 +806,12 @@ export default function CasePreview({
         textureLoader,
         designTexture,
         designMaterial,
-        bodyMaterial,
+        deviceColorMaterials,
         lights,
         setLighting: applyLighting,
         setDesignTexture: loadDesignTexture,
         setDeviceColor: (color: string) => {
-          bodyMaterial.color.set(color);
+          deviceColorMaterials.forEach((mat) => mat.color.set(color));
         },
         setAutoRotate: (value: boolean) => {
           currentAutoRotate = value;

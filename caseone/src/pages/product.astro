@@ -1,5 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import RatingStrip from '../components/RatingStrip.astro';
+import TrustBadges from '../components/TrustBadges.astro';
 import { products } from '@wix/stores';
 import { getDesigns } from '../lib/wix';
 import { PRODUCT_ID, FINISHES, UI_MODEL_LABELS } from '../lib/constants';
@@ -91,16 +93,18 @@ const faqs = [
 	title="Shop — Caseone Custom iPhone Cases"
 	description="One AI-designed case, printed once, made for your iPhone. Recycled polycarbonate shell, MagSafe-ready, made-to-order in 5–7 days."
 >
-	<section class="hero reveal">
+	<section class="hero reveal" data-product-hero>
 		<div class="hero-copy">
 			<p class="eyebrow">The Case</p>
 			<h1 class="display">{productName}</h1>
+			<RatingStrip />
 			<p class="hero-description">{productDescription}</p>
 			<p class="hero-price">From {PRICE_BY_FINISH.Matte}</p>
 			<div class="hero-actions">
 				<a href="/studio" class="btn-primary">Design Yours</a>
 				<a href="#pricing" class="btn-ghost">See Pricing</a>
 			</div>
+			<TrustBadges align="start" />
 		</div>
 		<div class="hero-gallery">
 			{heroImages.length > 0 ? (
@@ -199,7 +203,46 @@ const faqs = [
 			<a href="/studio" class="btn-primary">Design Yours</a>
 		</div>
 	</section>
+
+	<div class="sticky-buy-bar" data-sticky-buy-bar aria-hidden="true">
+		<div class="sticky-buy-bar-inner">
+			<div class="sticky-buy-info">
+				<span class="sticky-buy-name">{productName}</span>
+				<span class="rating-stars" aria-hidden="true">★★★★★</span>
+			</div>
+			<div class="sticky-buy-actions">
+				<span class="sticky-buy-price">{PRICE_BY_FINISH.Matte}+</span>
+				<a href="/studio" class="btn-primary">Design Yours</a>
+			</div>
+		</div>
+	</div>
 </Layout>
+
+<script>
+	// Sticky buy bar — shown once the hero (and its own CTA) scrolls out of
+	// view, hidden again when scrolled back to the top. Continuous toggle, not
+	// a one-time reveal, so this can't reuse Layout's IntersectionObserver
+	// (which unobserves after the first trigger).
+	const stickyBar = document.querySelector<HTMLElement>('[data-sticky-buy-bar]');
+	const heroEl = document.querySelector<HTMLElement>('[data-product-hero]');
+
+	if (stickyBar && heroEl && 'IntersectionObserver' in window) {
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				const show = !entry.isIntersecting;
+				stickyBar.classList.toggle('is-visible', show);
+				stickyBar.setAttribute('aria-hidden', show ? 'false' : 'true');
+			},
+			{ threshold: 0 }
+		);
+		observer.observe(heroEl);
+	} else if (stickyBar) {
+		// No IntersectionObserver support — keep the CTA reachable rather than
+		// permanently hiding it.
+		stickyBar.classList.add('is-visible');
+		stickyBar.setAttribute('aria-hidden', 'false');
+	}
+</script>
 
 <style>
 	.hero {
@@ -375,6 +418,95 @@ const faqs = [
 		.hero,
 		.feature-grid {
 			grid-template-columns: 1fr;
+		}
+	}
+
+	/* Conversion pass */
+
+	.hero-copy :global(.rating-strip) {
+		margin-top: 0.6rem;
+	}
+
+	.hero-copy :global(.trust-badges) {
+		margin-top: 1.75rem;
+	}
+
+	.hero-gallery-image {
+		transition: transform 0.3s ease;
+	}
+
+	.hero-gallery-image:hover {
+		transform: scale(1.02);
+	}
+
+	.sticky-buy-bar {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 60;
+		background: var(--ink);
+		color: var(--canvas);
+		visibility: hidden;
+		opacity: 0;
+		pointer-events: none;
+		transform: translateY(100%);
+		transition: transform 0.3s ease, opacity 0.3s ease;
+	}
+
+	.sticky-buy-bar.is-visible {
+		visibility: visible;
+		opacity: 1;
+		pointer-events: auto;
+		transform: translateY(0);
+	}
+
+	.sticky-buy-bar-inner {
+		max-width: 88rem;
+		margin: 0 auto;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.75rem clamp(1rem, 4vw, 2.5rem);
+	}
+
+	.sticky-buy-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		min-width: 0;
+	}
+
+	.sticky-buy-name {
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 0.95rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.sticky-buy-bar .rating-stars {
+		color: var(--coral-cta);
+		font-size: 0.75rem;
+	}
+
+	.sticky-buy-actions {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		flex-shrink: 0;
+	}
+
+	.sticky-buy-price {
+		font-family: var(--font-display);
+		font-weight: 700;
+	}
+
+	@media (max-width: 560px) {
+		.sticky-buy-info {
+			display: none;
 		}
 	}
 </style>

@@ -337,4 +337,23 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 		opacity: 0.65;
 		font-size: 1rem;
 	}
+
+	/* Conversion pass */
+
+	.gallery-card {
+		transition: transform 0.25s ease, box-shadow 0.25s ease;
+	}
+
+	.gallery-card:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 16px 28px -10px rgba(23, 21, 31, 0.25);
+	}
+
+	.gallery-card-media img {
+		transition: transform 0.35s ease;
+	}
+
+	.gallery-card:hover .gallery-card-media img {
+		transform: scale(1.05);
+	}
 </style>
