@@ -10,8 +10,16 @@ interface Props {
 }
 
 const { title, description, image = '/og-image.png' } = Astro.props;
-const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin).href;
-const ogImage = new URL(image, Astro.site ?? Astro.url.origin).href;
+// Prefer Astro.site when set; otherwise force https on the request origin so
+// canonical/og URLs never ship as http:// on the public host.
+const siteOrigin = (() => {
+	if (Astro.site) return Astro.site;
+	const origin = new URL(Astro.url.origin);
+	origin.protocol = 'https:';
+	return origin;
+})();
+const canonical = new URL(Astro.url.pathname, siteOrigin).href;
+const ogImage = new URL(image, siteOrigin).href;
 ---
 
 <!doctype html>
