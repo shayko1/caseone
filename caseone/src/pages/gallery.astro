@@ -130,7 +130,7 @@ const emptyStatePerStyleText = 'No designs in this style yet — be the first.';
 						<article class="gallery-card glass reveal" data-gallery-card data-style-slug={item.styleSlug}>
 							<div class="gallery-card-media">
 								<img
-									src={optimizeImage(item.image)}
+									src={optimizeImage(item.image, { width: 480, quality: 72 })}
 									alt={`${item.title} phone case design by ${item.creatorName}`}
 									loading="lazy"
 									style="aspect-ratio: 4 / 5; object-fit: cover;"

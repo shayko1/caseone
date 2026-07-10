@@ -41,7 +41,7 @@ function StaticFallback({
       }}
     >
       <img
-        src={optimizeImage(designUrl)}
+        src={optimizeImage(designUrl, { width: 640, quality: 75 })}
         alt="Phone case design preview"
         style={{
           maxWidth: "70%",
@@ -142,13 +142,15 @@ export default function CasePreview({
       if (disposed || !container) return;
 
       // ---- renderer / scene / camera ----
+      const isMobile = window.matchMedia("(max-width: 768px)").matches;
       const renderer = new THREE.WebGLRenderer({
-        antialias: true,
+        antialias: !isMobile,
         alpha: true,
         premultipliedAlpha: true,
+        powerPreference: isMobile ? "low-power" : "high-performance",
       });
       renderer.setClearColor(0x000000, 0);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.25 : 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.15;
@@ -160,15 +162,18 @@ export default function CasePreview({
       scene.background = null;
 
       // Soft studio environment so metal rims / glass catch real reflections.
-      try {
-        const { RoomEnvironment } = await import(
-          "three/examples/jsm/environments/RoomEnvironment.js"
-        );
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-        pmrem.dispose();
-      } catch {
-        // Environment is a visual upgrade only — scene still works without it.
+      // Skip on mobile — PMREM generation is a long main-thread task.
+      if (!isMobile) {
+        try {
+          const { RoomEnvironment } = await import(
+            "three/examples/jsm/environments/RoomEnvironment.js"
+          );
+          const pmrem = new THREE.PMREMGenerator(renderer);
+          scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+          pmrem.dispose();
+        } catch {
+          // Environment is a visual upgrade only — scene still works without it.
+        }
       }
 
       const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
@@ -481,7 +486,7 @@ export default function CasePreview({
         // 100-150KB lossless PNG at a fraction of this canvas's render
         // size) — re-encode to WebP at render time so the texture swap
         // doesn't stall on an oversized download.
-        textureLoader.load(optimizeImage(url), (tex) => {
+        textureLoader.load(optimizeImage(url, { width: 800, quality: 78 }), (tex) => {
           if (disposed || url !== latestRequestedUrl) {
             tex.dispose();
             return;
@@ -876,7 +881,15 @@ export default function CasePreview({
       dom.style.width = "100%";
       dom.style.height = "100%";
       dom.style.display = "block";
-      dom.style.touchAction = "none";
+      // Non-interactive hero must allow vertical page scroll on mobile.
+      // touch-action:none captures the gesture and leaves content below
+      // appearing "stuck" / late to load until a scroll starts elsewhere.
+      const applyTouchAction = (enabled: boolean) => {
+        const action = enabled ? "none" : "pan-y";
+        dom.style.touchAction = action;
+        container.style.touchAction = action;
+      };
+      applyTouchAction(currentInteractive);
 
       container.addEventListener("pointerdown", onPointerDown);
       window.addEventListener("pointermove", onPointerMove);
@@ -1035,6 +1048,7 @@ export default function CasePreview({
         },
         setInteractive: (value: boolean) => {
           currentInteractive = value;
+          applyTouchAction(value);
         },
         dispose,
       };
@@ -1099,7 +1113,8 @@ export default function CasePreview({
           width: "100%",
           height: "100%",
           outline: "none",
-          touchAction: "none",
+          // pan-y when not interactive so mobile scroll isn't trapped on the canvas
+          touchAction: interactive ? "none" : "pan-y",
           boxShadow: isFocused ? "0 0 0 3px rgba(255,45,149,0.85)" : "none",
         }}
       />

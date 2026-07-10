@@ -33,6 +33,16 @@ function hasWebGL(): boolean {
 function shouldSkipIntro(): boolean {
   if (typeof window === "undefined") return true;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true;
+  // Mobile / slow connections: skip the WebGL+GSAP intro — it dominates TBT/LCP
+  // on throttled devices (PageSpeed mobile). Desktop keeps the full sequence.
+  if (window.matchMedia("(max-width: 768px)").matches) return true;
+  try {
+    const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (conn?.saveData) return true;
+    if (conn?.effectiveType === "slow-2g" || conn?.effectiveType === "2g") return true;
+  } catch {
+    /* ignore */
+  }
   try {
     if (sessionStorage.getItem(SESSION_KEY) === "1") return true;
   } catch {
@@ -50,9 +60,9 @@ function markIntroSeen() {
 }
 
 /**
- * CASEONE genesis intro — faithful to the original particle→case sequence,
- * with Neon Atelier colors and a few production fixes (session skip, particle
- * fade-out, scaled timeline overlaps, no depth-write while transparent).
+ * CASEONE genesis intro — particle→case sequence with a frosted unique shell
+ * (generative one-of-one pattern, bumper lip, MagSafe), Pro Max phone body,
+ * and Neon Atelier colors. Session-skippable; respects reduced motion.
  */
 export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -70,18 +80,23 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
     finishedRef.current = true;
     markIntroSeen();
 
+    const unlockPage = () => {
+      document.documentElement.classList.remove("intro-active");
+      // Let Layout re-run reveal sweeps after overflow unlock (mobile IO lag).
+      document.dispatchEvent(new CustomEvent("caseone:intro-complete"));
+      onCompleteRef.current?.();
+    };
+
     if (immediate) {
       setVisible(false);
-      document.documentElement.classList.remove("intro-active");
-      onCompleteRef.current?.();
+      unlockPage();
       return;
     }
 
     setExiting(true);
     window.setTimeout(() => {
       setVisible(false);
-      document.documentElement.classList.remove("intro-active");
-      onCompleteRef.current?.();
+      unlockPage();
     }, 650);
   });
 
@@ -188,49 +203,129 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       const caseGroup = new THREE.Group();
       scene.add(caseGroup);
 
-      const caseWidth = 2.3;
-      const caseHeight = 4.7;
-      const caseDepth = 0.28;
-      const caseRadius = 0.45;
+      // iPhone 16 Pro Max proportions — taller, thinner, tighter corners
+      const caseWidth = 2.22;
+      const caseHeight = 4.78;
+      const caseDepth = 0.26;
+      const caseRadius = 0.4;
+      const phoneInset = 0.08;
+      const caseSeed = Math.floor(Math.random() * 99999);
 
       function createRoundedRectPath(w: number, h: number, r: number) {
         const path = new THREE.Shape();
+        const rr = Math.min(r, w / 2, h / 2);
         path.moveTo(0, h / 2);
-        path.lineTo(w / 2 - r, h / 2);
-        path.quadraticCurveTo(w / 2, h / 2, w / 2, h / 2 - r);
-        path.lineTo(w / 2, -h / 2 + r);
-        path.quadraticCurveTo(w / 2, -h / 2, w / 2 - r, -h / 2);
-        path.lineTo(-w / 2 + r, -h / 2);
-        path.quadraticCurveTo(-w / 2, -h / 2, -w / 2, -h / 2 + r);
-        path.lineTo(-w / 2, h / 2 - r);
-        path.quadraticCurveTo(-w / 2, h / 2, -w / 2 + r, h / 2);
+        path.lineTo(w / 2 - rr, h / 2);
+        path.quadraticCurveTo(w / 2, h / 2, w / 2, h / 2 - rr);
+        path.lineTo(w / 2, -h / 2 + rr);
+        path.quadraticCurveTo(w / 2, -h / 2, w / 2 - rr, -h / 2);
+        path.lineTo(-w / 2 + rr, -h / 2);
+        path.quadraticCurveTo(-w / 2, -h / 2, -w / 2, -h / 2 + rr);
+        path.lineTo(-w / 2, h / 2 - rr);
+        path.quadraticCurveTo(-w / 2, h / 2, -w / 2 + rr, h / 2);
         path.lineTo(0, h / 2);
         return path;
       }
+
+      // One-of-one generative frost pattern for the CASEONE shell edges
+      function createUniqueCaseTexture(seed: number) {
+        const size = 512;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d")!;
+        let s = seed;
+        const rnd = () => {
+          s = (s * 16807) % 2147483647;
+          return (s - 1) / 2147483646;
+        };
+
+        const base = ctx.createLinearGradient(0, 0, size, size);
+        base.addColorStop(0, "#120814");
+        base.addColorStop(0.5, "#1a0c1e");
+        base.addColorStop(1, "#0e0a16");
+        ctx.fillStyle = base;
+        ctx.fillRect(0, 0, size, size);
+
+        for (let i = 0; i < 5; i++) {
+          const x = rnd() * size;
+          const y = rnd() * size;
+          const rad = 80 + rnd() * 160;
+          const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+          g.addColorStop(0, rnd() > 0.45 ? "rgba(255,45,149,0.28)" : "rgba(124,92,255,0.26)");
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = g;
+          ctx.fillRect(0, 0, size, size);
+        }
+
+        const pts: Array<{ x: number; y: number }> = [];
+        for (let i = 0; i < 36; i++) pts.push({ x: rnd() * size, y: rnd() * size });
+        ctx.lineWidth = 1.1;
+        for (let i = 0; i < pts.length; i++) {
+          for (let j = i + 1; j < pts.length; j++) {
+            const dx = pts[i].x - pts[j].x;
+            const dy = pts[i].y - pts[j].y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 150) {
+              const a = (1 - d / 150) * 0.4;
+              ctx.strokeStyle =
+                rnd() > 0.5 ? `rgba(255,45,149,${a})` : `rgba(124,92,255,${a})`;
+              ctx.beginPath();
+              ctx.moveTo(pts[i].x, pts[i].y);
+              ctx.lineTo(pts[j].x, pts[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+        for (const p of pts) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 1.2 + rnd() * 2, 0, Math.PI * 2);
+          ctx.fillStyle = rnd() > 0.4 ? "rgba(255,45,149,0.75)" : "rgba(124,92,255,0.75)";
+          ctx.fill();
+        }
+
+        ctx.font = '600 28px system-ui, sans-serif';
+        ctx.fillStyle = "rgba(255,255,255,0.14)";
+        ctx.textAlign = "center";
+        ctx.fillText("CASEONE", size / 2, size * 0.84);
+        ctx.font = "400 14px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(124,92,255,0.45)";
+        ctx.fillText(`ONE OF ONE  ·  #${String(seed).padStart(5, "0")}`, size / 2, size * 0.9);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = Math.min(8, renderer!.capabilities.getMaxAnisotropy());
+        return tex;
+      }
+
+      const uniqueCaseTex = createUniqueCaseTexture(caseSeed);
 
       const caseGeometry = new THREE.ExtrudeGeometry(
         createRoundedRectPath(caseWidth, caseHeight, caseRadius),
         {
           depth: caseDepth,
           bevelEnabled: true,
-          bevelSegments: isMobile ? 4 : 8,
+          bevelSegments: isMobile ? 4 : 10,
           steps: 2,
-          bevelSize: 0.04,
-          bevelThickness: 0.04,
+          bevelSize: 0.035,
+          bevelThickness: 0.035,
         }
       );
       caseGeometry.center();
 
-      // Original-style coral/magenta shell (not a near-black slab)
+      // Frosted CASEONE shell — unique pattern on edges/back, scan glow
       const caseMaterial = new THREE.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         uniforms: {
           uColor: { value: new THREE.Color(ACCENT) },
+          uViolet: { value: new THREE.Color(PARTICLE) },
           uScanProgress: { value: 0 },
           uScanIntensity: { value: 0 },
           uOpacity: { value: 0 },
           uTime: { value: 0 },
+          uPattern: { value: uniqueCaseTex },
+          uCaseSize: { value: new THREE.Vector2(caseWidth, caseHeight) },
         },
         vertexShader: `
           varying vec3 vPosition;
@@ -249,32 +344,43 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
           varying vec3 vNormal;
           varying vec3 vViewPosition;
           uniform vec3 uColor;
+          uniform vec3 uViolet;
           uniform float uScanProgress;
           uniform float uScanIntensity;
           uniform float uOpacity;
           uniform float uTime;
+          uniform sampler2D uPattern;
+          uniform vec2 uCaseSize;
           void main() {
             vec3 normal = normalize(vNormal);
             vec3 viewDir = normalize(vViewPosition);
             vec3 lightDir = normalize(vec3(5.0, 5.0, 4.0));
             float diffuse = max(dot(normal, lightDir), 0.0);
             vec3 halfDir = normalize(lightDir + viewDir);
-            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * 0.5;
-            float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+            float spec = pow(max(dot(normal, halfDir), 0.0), 40.0) * 0.55;
+            float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 2.6);
 
-            float y = vPosition.y;
-            float scanY = mix(2.5, -2.5, uScanProgress);
-            float dist = abs(y - scanY);
-            float scanGlow = exp(-dist * dist * 15.0) * uScanIntensity;
+            vec2 backUv = vec2(
+              vPosition.x / uCaseSize.x + 0.5,
+              vPosition.y / uCaseSize.y + 0.5
+            );
+            vec3 pattern = texture2D(uPattern, backUv).rgb;
+            float isBack = smoothstep(0.04, -0.05, vPosition.z);
+            float edge = 1.0 - smoothstep(0.72, 0.92, max(abs(backUv.x - 0.5), abs(backUv.y - 0.5)) * 2.0);
 
-            // Dark shell with magenta rim — design artwork is the hero on the back
-            vec3 baseColor = mix(vec3(0.08, 0.07, 0.1), uColor, 0.22);
-            vec3 litColor = baseColor * (diffuse * 0.6 + 0.4) + vec3(1.0) * spec + uColor * fresnel * 0.45;
-            vec3 finalColor = mix(litColor, uColor * 2.0, scanGlow);
+            vec3 frost = mix(vec3(0.1, 0.08, 0.14), pattern, isBack * 0.85 + (1.0 - edge) * 0.55);
+            frost = mix(frost, uColor, 0.18 + fresnel * 0.2);
+            vec3 iridescence = mix(uColor, uViolet, fresnel + sin(uTime * 0.7 + vPosition.y * 2.0) * 0.12);
+            vec3 litColor = frost * (diffuse * 0.55 + 0.45) + vec3(1.0) * spec + iridescence * fresnel * 0.55;
+
+            float scanY = mix(2.6, -2.6, uScanProgress);
+            float dist = abs(vPosition.y - scanY);
+            float scanGlow = exp(-dist * dist * 16.0) * uScanIntensity;
+            vec3 finalColor = mix(litColor, mix(uColor, uViolet, 0.4) * 2.1, scanGlow);
 
             float alpha = uOpacity;
-            if (uOpacity < 1.0) {
-              alpha = (fresnel * 0.5 + scanGlow) * uOpacity;
+            if (uOpacity < 0.99) {
+              alpha = (0.4 + fresnel * 0.5 + scanGlow) * uOpacity;
             }
             if (alpha < 0.01) discard;
             gl_FragColor = vec4(finalColor, alpha);
@@ -283,20 +389,86 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
       });
       caseGroup.add(new THREE.Mesh(caseGeometry, caseMaterial));
 
-      const innerMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1c1c20,
-        roughness: 0.35,
-        metalness: 0.55,
+      // Raised bumper lip — makes it read as a CASE, not a bare phone
+      const lipShape = createRoundedRectPath(caseWidth + 0.05, caseHeight + 0.05, caseRadius + 0.025);
+      const lipHole = createRoundedRectPath(
+        caseWidth - phoneInset * 1.5,
+        caseHeight - phoneInset * 1.5,
+        caseRadius - 0.07
+      );
+      lipShape.holes.push(lipHole);
+      const lipGeo = new THREE.ExtrudeGeometry(lipShape, {
+        depth: 0.07,
+        bevelEnabled: true,
+        bevelSegments: 3,
+        bevelSize: 0.012,
+        bevelThickness: 0.012,
+      });
+      lipGeo.center();
+      const lipMat = new THREE.MeshStandardMaterial({
+        color: 0x2a1830,
+        roughness: 0.4,
+        metalness: 0.35,
         transparent: true,
         opacity: 0,
         depthWrite: false,
       });
-      caseGroup.add(
-        new THREE.Mesh(
-          new THREE.BoxGeometry(caseWidth - 0.1, caseHeight - 0.1, caseDepth - 0.06),
-          innerMaterial
-        )
+      const lipMesh = new THREE.Mesh(lipGeo, lipMat);
+      lipMesh.position.z = caseDepth / 2 + 0.015;
+      caseGroup.add(lipMesh);
+
+      // MagSafe ring on the unique case back
+      const magsafeMat = new THREE.MeshStandardMaterial({
+        color: 0x3a2a48,
+        metalness: 0.85,
+        roughness: 0.28,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const magsafeAccentMat = new THREE.MeshStandardMaterial({
+        color: 0xff2d95,
+        metalness: 0.55,
+        roughness: 0.35,
+        emissive: 0xff2d95,
+        emissiveIntensity: 0.25,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const magsafeOuter = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.02, 10, 48), magsafeMat);
+      magsafeOuter.position.set(0, -0.12, -caseDepth / 2 - 0.015);
+      caseGroup.add(magsafeOuter);
+      const magsafeInner = new THREE.Mesh(
+        new THREE.TorusGeometry(0.26, 0.014, 8, 40),
+        magsafeAccentMat
       );
+      magsafeInner.position.set(0, -0.12, -caseDepth / 2 - 0.015);
+      caseGroup.add(magsafeInner);
+
+      // Titanium phone body inside the case
+      const phoneW = caseWidth - phoneInset;
+      const phoneH = caseHeight - phoneInset;
+      const phoneShape = createRoundedRectPath(phoneW, phoneH, caseRadius - 0.06);
+      const phoneGeo = new THREE.ExtrudeGeometry(phoneShape, {
+        depth: caseDepth - 0.08,
+        bevelEnabled: true,
+        bevelSegments: isMobile ? 3 : 6,
+        bevelSize: 0.018,
+        bevelThickness: 0.018,
+      });
+      phoneGeo.center();
+      const innerMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3a3a42,
+        roughness: 0.28,
+        metalness: 0.92,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const innerMesh = new THREE.Mesh(phoneGeo, innerMaterial);
+      innerMesh.position.z = 0.01;
+      caseGroup.add(innerMesh);
 
       const screenMat = new THREE.ShaderMaterial({
         transparent: true,
@@ -317,21 +489,38 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
           uniform float uOpacity;
           uniform float uTime;
           void main() {
-            vec3 color1 = vec3(0.05, 0.04, 0.12);
-            vec3 color2 = vec3(0.15, 0.04, 0.1);
-            vec3 color = mix(color1, color2, vUv.y + sin(uTime * 0.5) * 0.1);
-            float wave = sin(vUv.x * 3.0 - vUv.y * 3.0 + uTime * 0.8) * 0.5 + 0.5;
-            color += vec3(0.14, 0.06, 0.12) * wave * 0.3;
+            vec3 deep = vec3(0.03, 0.02, 0.06);
+            vec3 mid = vec3(0.12, 0.04, 0.1);
+            float vignette = smoothstep(0.0, 0.75, length(vUv - 0.5));
+            vec3 color = mix(deep + mid * 0.5, deep, vignette);
+            float wave = sin(vUv.x * 4.0 - vUv.y * 5.0 + uTime * 0.7) * 0.5 + 0.5;
+            color += vec3(0.16, 0.05, 0.14) * wave * 0.22;
+            float topGlow = exp(-pow((1.0 - vUv.y) * 8.0, 2.0)) * 0.1;
+            color += vec3(0.2, 0.08, 0.28) * topGlow;
             gl_FragColor = vec4(color, uOpacity);
           }
         `,
       });
       const screenMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(caseWidth - 0.08, caseHeight - 0.08),
+        new THREE.PlaneGeometry(phoneW - 0.06, phoneH - 0.06),
         screenMat
       );
-      screenMesh.position.set(0, 0, caseDepth / 2 + 0.015);
+      screenMesh.position.set(0, 0, caseDepth / 2 + 0.022);
       caseGroup.add(screenMesh);
+
+      // Thin OLED bezel
+      const bezelShape = createRoundedRectPath(phoneW - 0.02, phoneH - 0.02, caseRadius - 0.07);
+      const bezelHole = createRoundedRectPath(phoneW - 0.07, phoneH - 0.07, caseRadius - 0.1);
+      bezelShape.holes.push(bezelHole);
+      const bezelMat = new THREE.MeshBasicMaterial({
+        color: 0x050506,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const bezelMesh = new THREE.Mesh(new THREE.ShapeGeometry(bezelShape), bezelMat);
+      bezelMesh.position.set(0, 0, caseDepth / 2 + 0.02);
+      caseGroup.add(bezelMesh);
 
       // Designed case BACK — real gallery artwork. FrontFace only so the
       // camera cutout doesn't punch a hole through the front of the phone.
@@ -344,10 +533,10 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         side: THREE.FrontSide,
       });
       const designMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(caseWidth - 0.1, caseHeight - 0.1),
+        new THREE.PlaneGeometry(caseWidth - 0.28, caseHeight - 0.28),
         designMat
       );
-      designMesh.position.set(0, 0, -caseDepth / 2 - 0.02);
+      designMesh.position.set(0, 0.08, -caseDepth / 2 - 0.028);
       designMesh.rotation.y = Math.PI;
       designMesh.renderOrder = 10;
       caseGroup.add(designMesh);
@@ -384,7 +573,7 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         const loader = new THREE.TextureLoader();
         loader.setCrossOrigin("anonymous");
         loader.load(
-          optimizeImage(designUrl, 90),
+          optimizeImage(designUrl, { width: 800, quality: 80 }),
           (tex) => {
             if (disposed) {
               tex.dispose();
@@ -411,11 +600,24 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         depthWrite: false,
       });
       const islandMesh = new THREE.Mesh(
-        new THREE.ShapeGeometry(createRoundedRectPath(0.6, 0.18, 0.09)),
+        new THREE.ShapeGeometry(createRoundedRectPath(0.72, 0.2, 0.1)),
         islandMat
       );
-      islandMesh.position.set(0, caseHeight / 2 - 0.4, caseDepth / 2 + 0.018);
+      islandMesh.position.set(0, phoneH / 2 - 0.34, caseDepth / 2 + 0.024);
       caseGroup.add(islandMesh);
+
+      const islandCamMat = new THREE.MeshBasicMaterial({
+        color: 0x0a1020,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const islandCam = new THREE.Mesh(new THREE.CircleGeometry(0.035, 16), islandCamMat);
+      islandCam.position.set(-0.18, phoneH / 2 - 0.34, caseDepth / 2 + 0.025);
+      caseGroup.add(islandCam);
+      const islandSensor = new THREE.Mesh(new THREE.CircleGeometry(0.02, 12), islandCamMat);
+      islandSensor.position.set(0.16, phoneH / 2 - 0.34, caseDepth / 2 + 0.025);
+      caseGroup.add(islandSensor);
 
       const buttonMat = new THREE.MeshStandardMaterial({
         color: 0x8e8e93,
@@ -425,24 +627,42 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         opacity: 0,
         depthWrite: false,
       });
-      const powerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.55, 0.1), buttonMat);
-      powerBtn.position.set(caseWidth / 2 + 0.015, 0.55, 0);
+      const powerBtn = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.55, 0.1), buttonMat);
+      powerBtn.position.set(caseWidth / 2 + 0.018, 0.4, 0);
       caseGroup.add(powerBtn);
-      const actionBtn = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.18, 0.1), buttonMat);
-      actionBtn.position.set(-caseWidth / 2 - 0.015, 1.05, 0);
+      const actionBtn = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.16, 0.1), buttonMat);
+      actionBtn.position.set(-caseWidth / 2 - 0.018, 1.08, 0);
       caseGroup.add(actionBtn);
-      const volUp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.28, 0.1), buttonMat);
-      volUp.position.set(-caseWidth / 2 - 0.015, 0.7, 0);
+      const volUp = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.28, 0.1), buttonMat);
+      volUp.position.set(-caseWidth / 2 - 0.018, 0.58, 0);
       caseGroup.add(volUp);
-      const volDown = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.28, 0.1), buttonMat);
-      volDown.position.set(-caseWidth / 2 - 0.015, 0.35, 0);
+      const volDown = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.28, 0.1), buttonMat);
+      volDown.position.set(-caseWidth / 2 - 0.018, 0.22, 0);
       caseGroup.add(volDown);
 
       // One camera module group — bump + lenses share the same transform so
       // they never drift into a double-island look.
       const cameraModule = new THREE.Group();
-      cameraModule.position.set(-0.48, 1.42, -caseDepth / 2 - 0.01);
+      cameraModule.position.set(-0.45, 1.48, -caseDepth / 2 - 0.01);
       caseGroup.add(cameraModule);
+
+      // Case camera cutout ring (larger than bump — reads as a real case)
+      const cutoutMat = new THREE.MeshStandardMaterial({
+        color: 0x1a1220,
+        roughness: 0.45,
+        metalness: 0.3,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const cutoutShape = createRoundedRectPath(1.12, 1.12, 0.24);
+      const cutoutHole = createRoundedRectPath(0.98, 0.98, 0.2);
+      cutoutShape.holes.push(cutoutHole);
+      const cutoutGeo = new THREE.ExtrudeGeometry(cutoutShape, { depth: 0.04, bevelEnabled: false });
+      cutoutGeo.center();
+      const cameraCutout = new THREE.Mesh(cutoutGeo, cutoutMat);
+      cameraCutout.position.set(0, 0, 0.02);
+      cameraModule.add(cameraCutout);
 
       const bumpMaterial = new THREE.MeshStandardMaterial({
         color: 0x3a3a40,
@@ -452,7 +672,7 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         opacity: 0,
         depthWrite: false,
       });
-      const bumpGeo = new THREE.ExtrudeGeometry(createRoundedRectPath(0.92, 0.92, 0.2), {
+      const bumpGeo = new THREE.ExtrudeGeometry(createRoundedRectPath(0.96, 0.96, 0.22), {
         depth: 0.12,
         bevelEnabled: true,
         bevelSegments: 4,
@@ -685,6 +905,10 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
 
       const fadeMaterials = [
         innerMaterial,
+        lipMat,
+        magsafeMat,
+        magsafeAccentMat,
+        cutoutMat,
         bumpMaterial,
         lensRingMat,
         lensGlassMat,
@@ -693,6 +917,8 @@ export default function GenesisIntro({ onComplete, designUrl }: GenesisIntroProp
         lensWellMat,
         micMat,
         buttonMat,
+        bezelMat,
+        islandCamMat,
       ];
 
       // Slightly faster than the original standalone piece (~6.5s + exit)

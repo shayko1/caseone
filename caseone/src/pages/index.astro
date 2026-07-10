@@ -6,6 +6,7 @@ import TrendingCarousel from "../components/TrendingCarousel";
 import ActivityTicker from "../components/ActivityTicker";
 import TrustBadges from "../components/TrustBadges.astro";
 import { getDesigns, getStyles, getGallery } from "../lib/wix";
+import { optimizeImage } from "../lib/image";
 import type { Design, Style, GalleryItem } from "../lib/wix";
 
 // getDesigns/getStyles/getGallery already try/catch internally and resolve to
@@ -164,6 +165,10 @@ const heroDesignUrls = pickHeroDesigns(allDesigns, styles, 5)
   .map((design) => design.image)
   .filter(Boolean);
 
+// Cap props serialized into the page — StylesWall only shows 10 tiles and
+// shuffles from this pool. Shipping every CMS design bloated HTML + hydration.
+const stylesWallDesigns = pickMixedDesigns(allDesigns, 16);
+
 const trendingDesigns = pickMixedDesigns(allDesigns, 9);
 const trendingStyleTitles: Record<string, string> = {};
 for (const design of trendingDesigns) {
@@ -178,6 +183,10 @@ const testimonialQuotes = [
   "Watching my case spin in 3D before I bought it made the decision instant. Zero regret.",
   "Nobody else has this case. That's the whole point, and it still gets me every time I catch it on the table.",
 ];
+
+const heroLcpUrl = heroDesignUrls[0]
+  ? optimizeImage(heroDesignUrls[0], { width: 640, quality: 75 })
+  : undefined;
 ---
 
 <Layout
@@ -185,6 +194,7 @@ const testimonialQuotes = [
 	description="Step into the atelier. Describe a look, get matched to a curated AI design, preview it in 3D, and hold the only case in the world that looks like you."
 	showIntro
 	introDesignUrl="/unique-case-preloading-opt.jpg"
+	preloadImage={heroLcpUrl}
 >
 	<section class="hero" aria-label="Introduction">
 		<div class="hero-bg" aria-hidden="true">
@@ -240,7 +250,7 @@ const testimonialQuotes = [
 	{
 		activityLines.length > 0 && (
 			<section class="activity-strip" aria-label="Recent studio activity">
-				<ActivityTicker lines={activityLines} client:only="react" />
+				<ActivityTicker lines={activityLines} client:visible />
 			</section>
 		)
 	}
@@ -272,7 +282,7 @@ const testimonialQuotes = [
 					</h2>
 					<p class="hero-sub">Designs getting remixed and bought right now.</p>
 				</div>
-				<TrendingCarousel designs={trendingDesigns} styleTitleBySlug={trendingStyleTitles} client:only="react" />
+				<TrendingCarousel designs={trendingDesigns} styleTitleBySlug={trendingStyleTitles} client:visible />
 			</section>
 		)
 	}
@@ -287,7 +297,7 @@ const testimonialQuotes = [
 		</div>
 		{
 			allDesigns.length > 0 ? (
-				<StylesWall designs={allDesigns} client:only="react" />
+				<StylesWall designs={stylesWallDesigns} client:visible />
 			) : (
 				<div class="styles-wall-empty glass">
 					<p>New styles are on the way — check back soon.</p>

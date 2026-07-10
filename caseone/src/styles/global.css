@@ -40,12 +40,19 @@ body {
 		radial-gradient(ellipse 80% 50% at 15% -10%, rgba(255, 45, 149, 0.18), transparent 55%),
 		radial-gradient(ellipse 70% 45% at 90% 5%, rgba(124, 92, 255, 0.16), transparent 50%),
 		radial-gradient(ellipse 60% 40% at 50% 110%, rgba(255, 45, 149, 0.08), transparent 55%);
-	background-attachment: fixed;
+	/* fixed attachment causes paint/scroll jank on mobile Safari */
+	background-attachment: scroll;
 	color: var(--ink);
 	font-family: var(--font-body);
 	font-weight: 400;
 	line-height: 1.5;
 	-webkit-font-smoothing: antialiased;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	body {
+		background-attachment: fixed;
+	}
 }
 
 h1,
@@ -1062,10 +1069,13 @@ main {
 	z-index: 1;
 	background: transparent !important;
 	cursor: pointer;
+	/* Allow vertical page scroll over the non-interactive hero canvas */
+	touch-action: pan-y;
 }
 
 .hero-preview-canvas canvas {
 	background: transparent !important;
+	touch-action: pan-y;
 }
 
 @media (max-width: 860px) {

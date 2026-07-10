@@ -70,9 +70,12 @@ export default function StylesWall({ designs, className }: StylesWallProps) {
         <div className="styles-wall-tile" key={slot}>
           <img
             key={design.id}
-            src={optimizeImage(design.image)}
+            src={optimizeImage(design.image, { width: 400, quality: 70 })}
             alt={design.title || "AI-generated case design"}
             loading="lazy"
+            decoding="async"
+            width={200}
+            height={400}
           />
         </div>
       ))}

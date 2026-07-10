@@ -543,7 +543,7 @@ export default function Studio({
                 className={`concept-card${selectedDesign?.id === c.id ? " is-selected" : ""}`}
                 onClick={() => selectConcept(c)}
               >
-                <img src={optimizeImage(c.image)} alt={c.title} className="concept-thumb" />
+                <img src={optimizeImage(c.image, { width: 400, quality: 72 })} alt={c.title} className="concept-thumb" />
                 <span className="concept-title">{c.title}</span>
               </button>
             ))}

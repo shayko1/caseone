@@ -2,7 +2,7 @@
 import { ViewTransitions } from 'astro:transitions';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
-import GenesisIntro from '../components/GenesisIntro';
+import GenesisIntroGate from '../components/GenesisIntroGate';
 import '../styles/global.css';
 
 interface Props {
@@ -13,9 +13,11 @@ interface Props {
 	showIntro?: boolean;
 	/** Design image revealed on the intro case back. */
 	introDesignUrl?: string;
+	/** Optional LCP image to preload (hero case, etc.). */
+	preloadImage?: string;
 }
 
-const { title, description, image = '/og-image.png', showIntro = false, introDesignUrl } = Astro.props;
+const { title, description, image = '/og-image.png', showIntro = false, introDesignUrl, preloadImage } = Astro.props;
 // Prefer Astro.site when set; otherwise force https on the request origin so
 // canonical/og URLs never ship as http:// on the public host.
 const siteOrigin = (() => {
@@ -49,16 +51,32 @@ const finalIntroDesignUrl = introDesignUrl ? new URL(introDesignUrl, siteOrigin)
 		<meta name="twitter:title" content={title} />
 		<meta name="twitter:description" content={description} />
 		<meta name="twitter:image" content={ogImage} />
+		{preloadImage && (
+			<link rel="preload" as="image" href={preloadImage} fetchpriority="high" />
+		)}
 		<ViewTransitions />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
+			rel="preload"
+			as="style"
+			href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+		/>
+		<link
 			href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
 			rel="stylesheet"
+			media="print"
+			onload="this.media='all'"
 		/>
+		<noscript>
+			<link
+				href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+				rel="stylesheet"
+			/>
+		</noscript>
 	</head>
 	<body>
-		{showIntro && <GenesisIntro designUrl={finalIntroDesignUrl} client:only="react" />}
+		{showIntro && <GenesisIntroGate designUrl={finalIntroDesignUrl} client:only="react" />}
 		<div class="announcement-bar" data-announcement>
 			<p class="announcement-text" data-announcement-text>Free shipping on orders over $75</p>
 		</div>
@@ -80,7 +98,10 @@ const finalIntroDesignUrl = introDesignUrl ? new URL(introDesignUrl, siteOrigin)
 							}
 						}
 					},
-					{ threshold: 0.15, rootMargin: '0px 0px -60px 0px' }
+					// Eager margins: iOS often delays IO callbacks until momentum
+					// scroll ends, which made post-hero sections look blank / late.
+					// Reveal slightly before they enter the viewport.
+					{ threshold: 0, rootMargin: '20% 0px 20% 0px' }
 				);
 
 				document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
@@ -93,9 +114,11 @@ const finalIntroDesignUrl = introDesignUrl ? new URL(introDesignUrl, siteOrigin)
 				// This force-reveals anything already in view; idempotent, since it
 				// skips elements already marked `.in`.
 				const sweepReveal = () => {
+					const vh = window.innerHeight || 0;
+					const lead = vh * 0.25;
 					document.querySelectorAll('.reveal:not(.in)').forEach((el) => {
 						const rect = el.getBoundingClientRect();
-						if (rect.top < window.innerHeight && rect.bottom > 0) {
+						if (rect.top < vh + lead && rect.bottom > -lead) {
 							el.classList.add('in');
 							observer.unobserve(el);
 						}
@@ -108,6 +131,22 @@ const finalIntroDesignUrl = introDesignUrl ? new URL(introDesignUrl, siteOrigin)
 				});
 				window.addEventListener('load', sweepReveal);
 				document.addEventListener('astro:page-load', sweepReveal);
+				// Genesis intro locks overflow; re-sweep once it unlocks so
+				// below-the-fold sections aren't stuck at opacity:0.
+				document.addEventListener('caseone:intro-complete', sweepReveal);
+				// Catch mid-scroll on mobile (IO can lag behind touch momentum).
+				let scrollSweepRaf = 0;
+				window.addEventListener(
+					'scroll',
+					() => {
+						if (scrollSweepRaf) return;
+						scrollSweepRaf = requestAnimationFrame(() => {
+							scrollSweepRaf = 0;
+							sweepReveal();
+						});
+					},
+					{ passive: true }
+				);
 			}
 
 			// Announcement bar rotation — the first message is already in the

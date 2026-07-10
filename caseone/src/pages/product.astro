@@ -111,7 +111,7 @@ const faqs = [
 			{heroImages.length > 0 ? (
 				heroImages.slice(0, 3).map((src, i) => (
 					<img
-						src={optimizeImage(src)}
+						src={optimizeImage(src, { width: 900, quality: 78 })}
 						alt={`Caseone custom iPhone case, view ${i + 1}`}
 						class="hero-gallery-image"
 						loading={i === 0 ? 'eager' : 'lazy'}

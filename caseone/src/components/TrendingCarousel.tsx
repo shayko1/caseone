@@ -41,9 +41,12 @@ export default function TrendingCarousel({ designs, styleTitleBySlug }: Trending
           <li className="trending-tile" key={design.id}>
             <div className="trending-tile-frame">
               <img
-                src={optimizeImage(design.image)}
+                src={optimizeImage(design.image, { width: 480, quality: 72 })}
                 alt={design.title || "Case design"}
                 loading="lazy"
+                decoding="async"
+                width={240}
+                height={480}
               />
             </div>
             <div className="trending-tile-body">
